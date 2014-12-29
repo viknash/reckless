@@ -4,9 +4,12 @@
 #include "branch_hints.hpp"
 #include "utility.hpp"
 
+#if defined(__unix__)
 #include <pthread.h>
 #include <errno.h>
 #include <signal.h>     // raise
+#elif defined(_WIN32)
+#endif
 
 #include <memory>
 #include <cassert>      // assert
@@ -51,6 +54,7 @@ public:
         args_(args...),
         initialized_(true)
     {
+		create_key(&key_, &destroy);
         if(0 != pthread_key_create(&key_, &destroy))
             throw std::bad_alloc();
     }
@@ -74,6 +78,9 @@ public:
         assert(result == 0);
         (void) result;  /// avoid warning about unused variable when NDEBUG is defined
     }
+
+    thread_object(thread_object const&) = delete;
+    thread_object& operator=(thread_object const&) = delete;
 
     thread_object& operator=(thread_object&& other)
     {
@@ -101,9 +108,6 @@ public:
     }
 
 private:
-    thread_object(thread_object const&);               // not defined
-    thread_object& operator=(thread_object const&);    // not defined
-
     T* create_and_get() const
     {
         typename make_index_sequence<sizeof...(Args)>::type indexes;
@@ -160,7 +164,11 @@ private:
     }
 
     std::tuple<Args...> args_;
+#if defined(__unix__)
     pthread_key_t key_;
+#elif defined(_WIN32)
+	DWORD key_;
+#endif
     bool initialized_;
 };
 

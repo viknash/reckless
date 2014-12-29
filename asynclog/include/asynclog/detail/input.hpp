@@ -3,6 +3,9 @@
 
 #include "asynclog/detail/spsc_event.hpp"
 
+#include <atomic>
+#include <cstdint>
+
 namespace asynclog {
 
 class basic_log;

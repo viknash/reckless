@@ -4,6 +4,12 @@
 #include <cstddef>  // size_t
 #include <cstdint>  // uintptr_t
 
+#ifdef __GNUC__
+#define ATTRIBUTE_CONST __attribute__((const));
+#else
+#define ATTRIBUTE_CONST
+#endif
+
 namespace asynclog {
 namespace detail {
 
@@ -44,10 +50,10 @@ int destroy(T* p)
 }
 
 extern unsigned const cache_line_size;
-std::size_t get_page_size() __attribute__ ((const));
+std::size_t get_page_size() ATTRIBUTE_CONST;
 // TODO try commentinig this out and see if code that depends on it can use
 // cache_line_size instead.
-std::size_t get_cache_line_size() __attribute__((const));
+std::size_t get_cache_line_size() ATTRIBUTE_CONST;
 void prefetch(void const* ptr, std::size_t size);
 
 inline bool is_power_of_two(std::size_t v)
