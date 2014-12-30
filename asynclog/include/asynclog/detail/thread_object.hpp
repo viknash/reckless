@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <signal.h>     // raise
 #elif defined(_WIN32)
+#include <windows.h>
 #endif
 
 #include <memory>
@@ -21,6 +22,16 @@ namespace asynclog {
 namespace detail {
 struct uninitialized_t {};
 static uninitialized_t const uninitialized;
+
+#if defined(__unix__)
+typedef pthread_key_t tls_key_t;
+#define CALLBACK
+#elif defined(_WIN32)
+typedef DWORD tls_key_t;
+// CALLBACK defined by <Windows.h>
+#endif
+
+tls_key_t create_tls_key(void (CALLBACK *pdestroy)(void*));
 
 // TODO take an allocator argument here, somehow. The tricky part is that
 // pthread_key_create takes a destroy function that doesn't have any additional
@@ -38,7 +49,7 @@ private:
             T(std::forward<Args2>(args)...)
         {
         }
-        pthread_key_t key;
+        tls_key_t key;
     };
 
 public:
@@ -55,8 +66,6 @@ public:
         initialized_(true)
     {
 		create_key(&key_, &destroy);
-        if(0 != pthread_key_create(&key_, &destroy))
-            throw std::bad_alloc();
     }
 
     thread_object(thread_object&& other) :
@@ -163,12 +172,8 @@ private:
         pthread_setspecific(key, nullptr);
     }
 
-    std::tuple<Args...> args_;
-#if defined(__unix__)
-    pthread_key_t key_;
-#elif defined(_WIN32)
-	DWORD key_;
-#endif
+	std::tuple<Args...> args_;
+    tls_key_t key_;
     bool initialized_;
 };
 
