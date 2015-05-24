@@ -10,15 +10,14 @@ namespace reckless {
 // TODO this is a bit vague, rename to e.g. log_target or someting?
 class writer {
 public:
-    enum Result
+    enum result_t
     {
         SUCCESS,
-        // FIXME honor these error codes
         ERROR_TRY_LATER,
         ERROR_GIVE_UP
     };
     virtual ~writer() = 0;
-    virtual Result write(void const* pbuffer, std::size_t count) = 0;
+    virtual result_t write(void const* pbuffer, std::size_t count) = 0;
 };
 
 }   // namespace reckless

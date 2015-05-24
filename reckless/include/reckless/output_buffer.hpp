@@ -27,8 +27,15 @@ public:
 
     char* reserve(std::size_t size)
     {
-        if(detail::unlikely(static_cast<std::size_t>(pbuffer_end_ - pcommit_end_) < size)) {
+        std::size_t remaining = pbuffer_end_ - pcommit_end_;
+        if(detail::unlikely(remaining < size)) {
+            std::size_t buffer_size = pbuffer_end_ - pbuffer_;
+            assert(size <= static_cast<std::size_t>());
             flush();
+            std::size_t complete = pframe_end_ - pbuffer_;
+            if(detail::likely(complete + remaining >= size)) {
+            } else {
+            }
             // TODO if the flush fails above, the only thing we can do is discard
             // the data. But perhaps we should invoke a callback that can do
             // something, such as log a message about the discarded data.
@@ -73,6 +80,7 @@ private:
 
     writer* pwriter_;
     char* pbuffer_;
+    char* pframe_end_;
     char* pcommit_end_;
     char* pbuffer_end_;
 };
