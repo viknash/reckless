@@ -13,8 +13,8 @@ public:
     enum result_t
     {
         SUCCESS,
-        ERROR_TRY_LATER,
-        ERROR_GIVE_UP
+        FAILURE,
+        PERMANENT_FAILURE
     };
     virtual ~writer() = 0;
     virtual result_t write(void const* pbuffer, std::size_t count) = 0;
