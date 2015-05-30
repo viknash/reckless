@@ -9,7 +9,7 @@ class file_writer : public writer {
 public:
     file_writer(char const* path);
     ~file_writer();
-    Result write(void const* pbuffer, std::size_t count);
+    std::error_code write(void const* pbuffer, std::size_t count);
 private:
     int fd_;
 };

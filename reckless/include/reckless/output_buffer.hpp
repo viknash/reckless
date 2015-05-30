@@ -29,8 +29,8 @@ public:
     {
         std::size_t remaining = pbuffer_end_ - pcommit_end_;
         if(detail::unlikely(remaining < size)) {
-            std::size_t buffer_size = pbuffer_end_ - pbuffer_;
-            assert(size <= static_cast<std::size_t>());
+            //std::size_t buffer_size = pbuffer_end_ - pbuffer_;
+            //assert(size <= static_cast<std::size_t>());
             flush();
             std::size_t complete = pframe_end_ - pbuffer_;
             if(detail::likely(complete + remaining >= size)) {

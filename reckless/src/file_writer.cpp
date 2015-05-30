@@ -7,6 +7,38 @@
 #include <errno.h>
 #include <unistd.h>
 
+namespace {
+    class error_category : public std::error_category {
+    public:
+        char const* name() const noexcept override
+        {
+            return "file_writer";
+        }
+        std::error_condition default_error_condition(int code) const override
+        {
+            if(code == ENOSPC)
+                return reckless::writer::temporary_failure;
+            else
+                return reckless::writer::permanent_failure;
+        }
+        std::string message(int condition) const override
+        {
+            switch(condition) {
+            case temporary_failure:
+                return "temporary failure";
+            case permanent_failure:
+                return "permanent failure";
+            }
+        }
+    };
+    
+    error_category const& get_error_category()
+    {
+        static error_category cat;
+        return cat;
+    }
+}
+
 reckless::file_writer::file_writer(char const* path) :
     fd_(-1)
 {
@@ -26,7 +58,7 @@ reckless::file_writer::~file_writer()
         close(fd_);
 }
 
-auto reckless::file_writer::write(void const* pbuffer, std::size_t count) -> Result
+std::error_code reckless::file_writer::write(void const* pbuffer, std::size_t count) -> Result
 {
     char const* p = static_cast<char const*>(pbuffer);
     while(count != 0) {
@@ -40,26 +72,7 @@ auto reckless::file_writer::write(void const* pbuffer, std::size_t count) -> Res
         }
     }
     if(count == 0)
-        return SUCCESS;
+        return std::error_code();
 
-    // TODO handle broken pipe signal?
-    switch(errno) {
-    case EFBIG:
-    case EIO:
-    case EPIPE:
-    case ERANGE:
-    case ECONNRESET:
-    case EINVAL:
-    case ENXIO:
-    case EACCES:
-    case ENETDOWN:
-    case ENETUNREACH:
-        // TODO handle this error by not writing to the buffer any more.
-        return ERROR_GIVE_UP;
-    case ENOSPC:
-        return ERROR_TRY_LATER;
-    default:
-        // TODO throw proper error
-        throw std::runtime_error("cannot write to file descriptor");
-    }
+    return std::error_code(errno, get_error_category());
 }
