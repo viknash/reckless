@@ -20,6 +20,7 @@ namespace {
         }
         bool equivalent(int code, std::error_condition const& condition) const override
         {
+            if(condition.
         }
         std::string message(int condition) const override
         {
