@@ -19,14 +19,6 @@ public:
     static std::error_category const& error_category();
     virtual ~writer() = 0;
     virtual std::error_code write(void const* pbuffer, std::size_t count) = 0;
-
-private:
-    class error_category_t : public std::error_category {
-    public:
-        char const* name() const noexcept override;
-        std::error_condition default_error_condition(int code) const noexcept override;
-        std::string message(int condition) const override;
-    };
 };
 
 inline std::error_condition make_error_condition(writer::errc ec)

@@ -25,6 +25,17 @@ namespace {
             else
                 return std::system_category().equivalent(code, condition);
         }
+        // This overload is called if we have an error_condition that belongs to
+        // this error_category, and compare it to an error_code belonging to
+        // another error_category. Since the error_category is in the anonymous
+        // namespace, the only way that would happen is if you convert an
+        // error_code that comes from here into an error_condition, then try to
+        // compare it to an error_code from another category. It's a
+        // pathological situation, but the correct way to implement it should be
+        // to map the condition value from this category to
+        // reckless::writer::error_category() if the error_code is in that
+        // category, then do the comparison. It essentially reverses the
+        // error_code / error_condition relationship.
         bool equivalent(std::error_code const& code, int condition) const noexcept override
         {
             if(code.category() == reckless::writer::error_category())

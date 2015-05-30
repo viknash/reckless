@@ -6,9 +6,9 @@
 #include <cstddef>  // size_t
 #include <new>      // bad_alloc
 #include <cstring>  // strlen, memcpy
+#include <system_error> // error_code
 
 namespace reckless {
-class writer;
 
 class output_buffer {
 public:
@@ -83,6 +83,7 @@ private:
     char* pframe_end_;
     char* pcommit_end_;
     char* pbuffer_end_;
+    int error_state_; // NEXT not good. we need to keep the original error_code for reference.
 };
 
 }

@@ -9,7 +9,8 @@ reckless::output_buffer::output_buffer() :
     pwriter_(nullptr),
     pbuffer_(nullptr),
     pcommit_end_(nullptr),
-    pbuffer_end_(nullptr)
+    pbuffer_end_(nullptr),
+    error_state_(0)
 {
 }
 
@@ -17,7 +18,8 @@ reckless::output_buffer::output_buffer(writer* pwriter, std::size_t max_capacity
     pwriter_(nullptr),
     pbuffer_(nullptr),
     pcommit_end_(nullptr),
-    pbuffer_end_(nullptr)
+    pbuffer_end_(nullptr),
+    error_state_(0)
 {
     reset(pwriter, max_capacity);
 }
@@ -28,11 +30,13 @@ reckless::output_buffer::output_buffer(output_buffer&& other)
     pbuffer_ = other.pbuffer_;
     pcommit_end_ = other.pcommit_end_;
     pbuffer_end_ = other.pbuffer_end_;
+    error_state_ = other.error_state_;
 
     other.pwriter_ = nullptr;
     other.pbuffer_ = nullptr;
     other.pcommit_end_ = nullptr;
     other.pbuffer_end_ = nullptr;
+    other.error_state_ = 0;
 }
 
 reckless::output_buffer& reckless::output_buffer::operator=(output_buffer&& other)
@@ -43,11 +47,13 @@ reckless::output_buffer& reckless::output_buffer::operator=(output_buffer&& othe
     pbuffer_ = other.pbuffer_;
     pcommit_end_ = other.pcommit_end_;
     pbuffer_end_ = other.pbuffer_end_;
+    error_state_ = other.error_state_;
 
     other.pwriter_ = nullptr;
     other.pbuffer_ = nullptr;
     other.pcommit_end_ = nullptr;
     other.pbuffer_end_ = nullptr;
+    other.error_state_ = 0;
 
     return *this;
 }
@@ -115,10 +121,10 @@ void reckless::output_buffer::flush()
     // NOTE if you get a crash here, it could be because your log object has a
     // longer lifetime than the writer (i.e. the writer has been destroyed
     // already).
-    //if(detail::unlikely(state_ == PERMANENT_FAILURE)) {
-    //    pcommit_end_ = pbuffer_;
-    //    return;
-    //}
+    if(detail::unlikely(error_state_ == writer::permanent_failure)) {
+        pcommit_end_ = pbuffer_;
+        return;
+    }
     auto error = pwriter_->write(pbuffer_, pcommit_end_ - pbuffer_);
     if(detail::likely(!error)) {
         pcommit_end_ = pbuffer_;
