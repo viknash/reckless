@@ -16,10 +16,10 @@ namespace {
         }
         std::error_condition default_error_condition(int code) const override
         {
-            if(code == ENOSPC)
-                return reckless::writer::temporary_failure;
-            else
-                return reckless::writer::permanent_failure;
+            return system_category().default_error_condition(code);
+        }
+        bool equivalent(int code, std::error_condition const& condition) const override
+        {
         }
         std::string message(int condition) const override
         {
@@ -30,6 +30,7 @@ namespace {
                 return "permanent failure";
             }
         }
+        bool equivalent(
     };
     
     error_category const& get_error_category()

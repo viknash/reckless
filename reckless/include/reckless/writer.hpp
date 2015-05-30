@@ -16,8 +16,20 @@ public:
         temporary_failure = 1,
         permanent_failure = 2
     };
+    static std::error_category const& error_category()
+    {
+        static error_category ec;
+        return ec;
+    }
     virtual ~writer() = 0;
     virtual std::error_code write(void const* pbuffer, std::size_t count) = 0;
+
+private:
+    class error_category : public std::error_category {
+    public:
+    
+    private:
+    };
 };
 
 }   // namespace reckless
