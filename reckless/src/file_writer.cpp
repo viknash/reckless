@@ -12,26 +12,33 @@ namespace {
     public:
         char const* name() const noexcept override
         {
-            return "file_writer";
+            return "reckless::file_writer";
         }
         std::error_condition default_error_condition(int code) const override
         {
-            return system_category().default_error_condition(code);
+            return std::system_category().default_error_condition(code);
         }
         bool equivalent(int code, std::error_condition const& condition) const override
         {
-            if(condition.
+            if(condition.category() == reckless::writer::error_category()) {
+                reckless::writer::errc lhs_condition;
+                if(code == ENOSPC)
+                    lhs_condition = reckless::writer::temporary_failure;
+                else
+                    lhs_condition = reckless::writer::permanent_failure;
+                return lhs_condition == condition.value();
+            } else {
+                return std::system_category().equivalent(code, condition);
+            }
+        }
+        bool equivalent(std::error_code const& code, int condition) const override;
+        {
+            
         }
         std::string message(int condition) const override
         {
-            switch(condition) {
-            case temporary_failure:
-                return "temporary failure";
-            case permanent_failure:
-                return "permanent failure";
-            }
+            return system_category().message(condition);
         }
-        bool equivalent(
     };
     
     error_category const& get_error_category()
