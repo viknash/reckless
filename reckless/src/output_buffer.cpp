@@ -115,10 +115,10 @@ void reckless::output_buffer::flush()
     // NOTE if you get a crash here, it could be because your log object has a
     // longer lifetime than the writer (i.e. the writer has been destroyed
     // already).
-    if(detail::unlikely(state_ == PERMANENT_FAILURE)) {
-        pcommit_end_ = pbuffer_;
-        return;
-    }
+    //if(detail::unlikely(state_ == PERMANENT_FAILURE)) {
+    //    pcommit_end_ = pbuffer_;
+    //    return;
+    //}
     auto result = pwriter_->write(pbuffer_, pcommit_end_ - pbuffer_);
     if(detail::likely(result == SUCCESS)) {
         pcommit_end_ = pbuffer_;

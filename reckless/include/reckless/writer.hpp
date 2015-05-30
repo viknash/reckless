@@ -23,8 +23,8 @@ public:
 private:
     class error_category_t : public std::error_category {
     public:
-        char const* name() const;
-        std::error_condition default_error_condition(int code) const override;
+        char const* name() const noexcept override;
+        std::error_condition default_error_condition(int code) const noexcept override;
         std::string message(int condition) const override;
     };
 };
