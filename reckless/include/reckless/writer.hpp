@@ -29,13 +29,22 @@ private:
     };
 };
 
+inline std::error_condition make_error_condition(writer::errc ec)
+{
+    return std::error_condition(ec, writer::error_category());
+}
+
+inline std::error_code make_error_code(writer::errc ec)
+{
+    return std::error_code(ec, writer::error_category());
+}
 }   // namespace reckless
 
 namespace std
 {
     template <>
     struct is_error_condition_enum<reckless::writer::errc> : public true_type {};
-    template <>
-    struct is_error_code_enum<reckless::writer::errc> : public true_type {};
+    //template <>
+    //struct is_error_code_enum<reckless::writer::errc> : public true_type {};
 }
 #endif  // RECKLESS_WRITER_HPP

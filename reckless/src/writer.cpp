@@ -30,6 +30,7 @@ std::string writer::error_category_t::message(int condition) const
     case permanent_failure:
         return "permanent failure while writing log";
     }
+    throw std::invalid_argument("invalid condition code");
 }
 
 }   // namespace reckless

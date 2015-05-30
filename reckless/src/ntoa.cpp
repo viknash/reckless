@@ -1098,11 +1098,11 @@ unit_test::suite<log10_suite> log10_tests = {
 
 class string_writer : public writer {
 public:
-    Result write(void const* pbuffer, std::size_t count) override
+    std::error_code write(void const* pbuffer, std::size_t count) override
     {
         auto pc = static_cast<char const*>(pbuffer);
         buffer_.insert(buffer_.end(), pc, pc + count);
-        return SUCCESS;
+        return std::error_code();
     }
 
     void reset()

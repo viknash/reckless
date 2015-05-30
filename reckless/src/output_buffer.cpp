@@ -119,16 +119,16 @@ void reckless::output_buffer::flush()
     //    pcommit_end_ = pbuffer_;
     //    return;
     //}
-    auto result = pwriter_->write(pbuffer_, pcommit_end_ - pbuffer_);
-    if(detail::likely(result == SUCCESS)) {
+    auto error = pwriter_->write(pbuffer_, pcommit_end_ - pbuffer_);
+    if(detail::likely(!error)) {
         pcommit_end_ = pbuffer_;
-        state_ = result;
-    } else if(result == FAILURE) {
-        std::size_t unfinished_frame_size = pcommit_end_ - pframe_end;
-        std::memcpy(pbuffer_, pframe_end_, unfinished_frame_size);
-        pframe_end_ = pbuffer_;
-        pcommit_end_ = unfinished_frame_size;
-    } else if(result == PERMANENT_FAILURE) {
-        pcommit_end_ = pbuffer_;
+        //state_ = result;
+    } else if(error == writer::temporary_failure) {
+        //std::size_t unfinished_frame_size = pcommit_end_ - pframe_end;
+        //std::memcpy(pbuffer_, pframe_end_, unfinished_frame_size);
+        //pframe_end_ = pbuffer_;
+        //pcommit_end_ = unfinished_frame_size;
+    } else if(error == writer::permanent_failure) {
+        //pcommit_end_ = pbuffer_;
     }
 }
