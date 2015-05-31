@@ -10,6 +10,16 @@
 
 namespace reckless {
 
+// Thrown if output_buffer::reserve() is used to allocate more than can fit in
+// the output buffer during formatting of a single input frame. If this happens
+// then you need to either enlarge the output buffer or reduce the amount of
+// data produced by your formatter (probably the latter, you maniac...).
+class excessive_input_frame_output : public std::bad_alloc
+{
+public:
+    virtual char const* what();
+};
+
 class output_buffer {
 public:
     output_buffer();
@@ -25,10 +35,19 @@ public:
     // throw bad_alloc if unable to malloc() the buffer.
     void reset(writer* pwriter, std::size_t max_capacity);
 
+    void frame_end()
+    {
+        pframe_end_ = pcommit_end_;
+        discard_frame_ = false;
+    }
+    
     char* reserve(std::size_t size)
     {
         std::size_t remaining = pbuffer_end_ - pcommit_end_;
-        if(detail::unlikely(remaining < size)) {
+        if(detail::likely(size <= remaining)) {
+            return pcommit_end_;
+        } else {
+            return reserve_slow_path(size);
             //std::size_t buffer_size = pbuffer_end_ - pbuffer_;
             //assert(size <= static_cast<std::size_t>());
             flush();
@@ -46,11 +65,12 @@ public:
             if(static_cast<std::size_t>(pbuffer_end_ - pbuffer_) < size)
                 throw std::bad_alloc();
         }
-        return pcommit_end_;
     }
 
     void commit(std::size_t size)
     {
+        if(detail::unlikely(discard_frame_))
+            return;
         pcommit_end_ += size;
     }
     
@@ -78,12 +98,15 @@ private:
     output_buffer(output_buffer const&) = delete;
     output_buffer& operator=(output_buffer const&) = delete;
 
+    char* reserve_slow_path(std::size_t size);
+
     writer* pwriter_;
     char* pbuffer_;
     char* pframe_end_;
     char* pcommit_end_;
     char* pbuffer_end_;
-    int error_state_; // NEXT not good. we need to keep the original error_code for reference.
+    std::error_code error_state_;
+    bool discard_frame_;
 };
 
 }
