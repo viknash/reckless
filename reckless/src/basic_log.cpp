@@ -158,6 +158,7 @@ void reckless::basic_log::output_worker()
                     }
                 }
             } catch(flush_error const& e) {
+                
             }
             pinput_start = ce.pinput_buffer->discard_input_frame(frame_size);
             if(likely(!panic_flush_)) {
