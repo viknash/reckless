@@ -7,9 +7,9 @@
 
 namespace reckless {
 
-excessive_input_frame_output::what()
+excessive_output_by_frame::what() const
 {
-    return "excessive input frame output";
+    return "excessive output by frame";
 }
     
 using detail::likely;
@@ -89,9 +89,6 @@ output_buffer::~output_buffer()
 
 void output_buffer::write(void const* buf, std::size_t count)
 {
-    if(unlikely(discard_frame_))
-        return;
-    
     // TODO this could be smarter by writing from the client-provided
     // buffer instead of copying the data.
     auto const buffer_size = pbuffer_end_ - pbuffer_;
@@ -158,23 +155,41 @@ void output_buffer::flush()
     pframe_end_ -= written;
     pcommit_end_ -= written;
     
-    if(likely(!error)) {
+    if(likely(!error))
         assert(written == count);   // A successful writer must write *all* data
-    } else if(error == writer::temporary_failure) {
-    } else if(error == writer::permanent_failure) {
-        //pcommit_end_ = pbuffer_;
-    }
     error_state_ = error;
 }
 
 char* output_buffer::reserve_slow_path(std::size_t size)
 {
+    std::size_t frame_size = (pcommit_end_ - pframe_end_) + size;
     std::size_t buffer_size = pbuffer_end_ - pbuffer_;
-    if(size > buffer_size)
-        throw std::bad_alloc();
-    if(error_state_) {
-    }
+    if(unlikely(frame_size > buffer_size))
+        throw excessive_output_by_frame();
     flush();
+    if(!error_state_) {
+        // Since we did not throw excessive_output_by_frame above we know that
+        // the projected frame size should fit within the buffer size. Since
+        // the flush succeeded, all buffer space that does not belong to this
+        // frame should be available by now. So there should be enough room
+        // left for the requested size.
+        std::size_t remaining = pbuffer_end_ - pcommit_end_;
+        assert(size <= remaining);
+        return pcommit_end_;
+    } else if(error_state_ == writer::temporary_failure) {
+        std::size_t remaining = pbuffer_end_ - pcommit_end_;
+        if(size <= remaining) {
+            // The flush failed, but before failing it managed to free up
+            // enough room to satisfy the request.
+            return pcommit_end_;
+        } else {
+            // The writer is failing and we have no space in the output buffer.
+            // We have to discard the data or give up.
+            throw flush_error();
+        }
+    } else if(error_state_ == writer::permanent_failure) {
+        throw flush_error();
+    }
 }
 
 }   // namespace reckless

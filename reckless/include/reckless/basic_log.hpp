@@ -26,10 +26,18 @@ namespace detail {
     std::size_t null_dispatch(output_buffer* poutput, char* pinput);
 }
 
+enum class error_policy {
+    ignore,
+    notify_on_recovery,
+    block,
+    fail_immediately
+};
+
 // TODO generic_log better name?
 class basic_log {
 public:
     using format_error_callback_t = std::function<void (output_buffer*, std::exception_ptr const&, std::type_info const&)>;
+    using flush_error_callback = std::function<void (output_buffer* 
     
     basic_log();
     // FIXME shared_input_queue_size seems like the least interesting of these
@@ -54,6 +62,7 @@ public:
         std::lock_guard<std::mutex> lk(callback_mutex_);
         format_error_callback_ = move(callback);
     }
+    void flush_error_callback(
 
     void panic_flush();
 
