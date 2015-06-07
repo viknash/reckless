@@ -101,36 +101,23 @@ void reckless::basic_log::panic_flush()
 
 void reckless::basic_log::output_worker()
 {
+    using namespace detail;
+    // Result of the last write attempt. Zero for no problems, or one of the
+    // writer::errc values.
+    unsigned error_state = 0;   
+
     // TODO if possible we should call signal_input_consumed() whenever the
     // output buffer is flushed, so threads aren't kept waiting indefinitely if
     // the queue never clears up.
-    using namespace detail;
     std::vector<thread_input_buffer*> touched_input_buffers;
     touched_input_buffers.reserve(std::max(8u, 2*std::thread::hardware_concurrency()));
     while(true) {
         commit_extent ce;
-        unsigned wait_time_ms = 0;
-        if(not shared_input_queue_->pop(ce)) {
-            if(unlikely(panic_flush_)) {
-                on_panic_flush_done();
-            } else {
-                shared_input_consumed_event_.signal();
-                for(thread_input_buffer* pinput_buffer : touched_input_buffers)
-                    pinput_buffer->signal_input_consumed();
-                for(thread_input_buffer* pbuffer : touched_input_buffers)
-                    pbuffer->input_consumed_flag = false;
-                touched_input_buffers.clear();
-                if(not output_buffer_.empty())
-                    output_buffer_.flush();
-                while(not shared_input_queue_->pop(ce)) {
-                    shared_input_queue_full_event_.wait(wait_time_ms);
-                    wait_time_ms += std::max(1u, wait_time_ms/4);
-                    wait_time_ms = std::min(wait_time_ms, 1000u);
-                }
-            }
-        }
+        pop_log_entries(ce);
             
         if(not ce.pinput_buffer) {
+            // A null input-buffer pointer is the termination signal. Finish up
+            // and exit the worker thread.
             if(unlikely(panic_flush_))
                 on_panic_flush_done();
             output_buffer_.flush();
@@ -144,22 +131,44 @@ void reckless::basic_log::output_worker()
                 pinput_start = ce.pinput_buffer->wraparound();
                 pdispatch = *reinterpret_cast<formatter_dispatch_function_t**>(pinput_start);
             }
-            std::size_t frame_size;
-            try {
-                frame_size = (*pdispatch)(&output_buffer_, pinput_start);
-            } catch(format_error const& e) {
-                frame_size = e.frame_size();
-                std::lock_guard<std::mutex> lk(callback_mutex_);
-                if(format_error_callback_) {
-                    try {
-                        format_error_callback_(&output_buffer_, e.nested_ptr(),
-                            e.argument_tuple_type());
-                    } catch(...) {
+
+            unsigned block_time_ms = 0;
+            do {
+                try {
+                    // Call formatter. This is what produces actual data in the
+                    // output buffer.
+                    (*pdispatch)(apply_formatter, &output_buffer_, pinput_start);
+                } catch(flush_error const& e) {
+                    output_buffer_.revert_frame();
+                    error_policy ep;
+                    if(e.code() == writer::temporary_error) {
+                        error_state = writer::temporary_error;
+                        ep = temporary_error_policy_;
+                    } else {
+                        error_state = writer::permanent_error;
+                        ep = permanent_error_policy_;
                     }
-                }
-            } catch(flush_error const& e) {
-                
-            }
+
+                    switch(ep) {
+                    case ignore:
+                    case notify_on_recovery:
+                        break;
+                    case block:
+                        
+                    }
+                } catch(...) {
+                    std::lock_guard<std::mutex> lk(callback_mutex_);
+                    if(format_error_callback_) {
+                        auto ti = *reinterpret_cast<std::type_info const*>((*pdispatch)(get_typeid, &output_buffer_, pinput_start));
+                        try {
+                            format_error_callback_(&output_buffer_,
+                                std::current_exception(), ti);
+                        } catch(...) {
+                        }
+                    }
+            } while(retry);
+
+            auto frame_size = static_cast<std::size_t>((*pdispatch)(destroy, &output_buffer_, pinput_start));
             pinput_start = ce.pinput_buffer->discard_input_frame(frame_size);
             if(likely(!panic_flush_)) {
                 // If we're in panic-flush mode then we don't try to touch the
@@ -173,7 +182,43 @@ void reckless::basic_log::output_worker()
     }
 }
 
-void reckless::basic_log::queue_commit_extent(detail::commit_extent const& ce)
+void reckless::basic_log::pop_log_entries(detail::commit_extent& ce)
+{
+    if(shared_input_queue_->pop(ce))
+        return;
+
+    if(unlikely(panic_flush_)) {
+        // We are in panic-flush mode and the queue is empty. That
+        // means we are done.
+        on_panic_flush_done();  // never returns
+        assert(false);
+    }
+
+    // The queue is empty; signal any threads that are waiting and then flush
+    // the output buffer.
+    shared_input_consumed_event_.signal();
+    for(thread_input_buffer* pinput_buffer : touched_input_buffers)
+        pinput_buffer->signal_input_consumed();
+    for(thread_input_buffer* pbuffer : touched_input_buffers)
+        pbuffer->input_consumed_flag = false;
+    touched_input_buffers.clear();
+    if(not output_buffer_.empty())
+        output_buffer_.flush();
+
+    // Wait until something comes in to the queue. Since logger threads do not
+    // normally signal any event (unless the queue fills up), we have to poll
+    // the queue. We use an exponential back off to not use too many CPU cycles
+    // and allow other threads to run, but we don't wait for more than one
+    // second.
+    unsigned wait_time_ms = 0;
+    while(not shared_input_queue_->pop(ce)) {
+        shared_input_queue_full_event_.wait(wait_time_ms);
+        wait_time_ms += std::max(1u, wait_time_ms/4);
+        wait_time_ms = std::min(wait_time_ms, 1000u);
+    }
+}
+
+void reckless::basic_log::queue_log_entries(detail::commit_extent const& ce)
 {
     using namespace detail;
     if(unlikely(panic_flush_))

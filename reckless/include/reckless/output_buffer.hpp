@@ -26,6 +26,13 @@ class flush_error : public std::bad_alloc
 {
 public:
     char const* what() const override;
+    std::error_code const& code() const
+    {
+        return error_code_;
+    }
+
+private:
+    std::error_code error_code_;
 };
 
 class output_buffer {
@@ -45,6 +52,11 @@ public:
     void frame_end()
     {
         pframe_end_ = pcommit_end_;
+    }
+
+    void revert_frame()
+    {
+        pcommit_end_ = pframe_end_;
     }
     
     char* reserve(std::size_t size)

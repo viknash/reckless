@@ -21,7 +21,7 @@
 namespace reckless {
 namespace detail {
     template <class Formatter, typename... Args>
-    std::size_t formatter_dispatch(output_buffer* poutput, char* pinput);
+    std::size_t formatter_dispatch(output_buffer* poutput, std::size_t* pframe_size, char* pinput);
     template <std::size_t FrameSize>
     std::size_t null_dispatch(output_buffer* poutput, char* pinput);
 }
@@ -89,11 +89,11 @@ protected:
             // frame size. That way the frame will simply be consumed and ignored
             *reinterpret_cast<formatter_dispatch_function_t**>(pframe) =
                 &detail::null_dispatch<frame_size>;
-            queue_commit_extent({pbuffer, pbuffer->input_end()});
+            queue_log_entries({pbuffer, pbuffer->input_end()});
             throw;
         }
 
-        // TODO ideally queue_commit_extent would be called in a separate
+        // TODO ideally queue_log_entries would be called in a separate
         // commit() or flush() function, but then we have to call
         // get_input_buffer() twice which bloats the code at the call site. But
         // if we make get_input_buffer() protected (i.e. move
@@ -101,12 +101,13 @@ protected:
         // the call to get_input_buffer to the derived class, which could then
         // call write multiple times followed by commit() if it wants to
         // without having to fetch the TLS variable every time.
-        queue_commit_extent({pbuffer, pbuffer->input_end()});
+        queue_log_entries({pbuffer, pbuffer->input_end()});
     }
 
 private:
     void output_worker();
-    void queue_commit_extent(detail::commit_extent const& ce);
+    void pop_log_entries(detail::commit_extent& ce);
+    void queue_log_entries(detail::commit_extent const& ce);
     void reset_shared_input_queue(std::size_t node_count);
     detail::thread_input_buffer* get_input_buffer()
     {
@@ -177,43 +178,31 @@ namespace detail {
 template <class Formatter, typename... Args, std::size_t... Indexes>
 void formatter_dispatch_helper(output_buffer* poutput, std::tuple<Args...>& args, index_sequence<Indexes...>)
 {
-    Formatter::format(poutput, std::move(std::get<Indexes>(args))...);
+    Formatter::format(poutput, std::get<Indexes>(args)...);
 }
 
 template <class Formatter, typename... Args>
-std::size_t formatter_dispatch(output_buffer* poutput, char* pinput)
+std::uintptr_t input_frame_dispatch(dispatch_op op, output_buffer* poutput, char* pinput)
 {
     using namespace detail;
     typedef std::tuple<Args...> args_t;
     std::size_t const args_align = alignof(args_t);
     std::size_t const args_offset = (sizeof(formatter_dispatch_function_t*) + args_align-1)/args_align*args_align;
     std::size_t const frame_size = args_offset + sizeof(args_t);
-    struct args_owner {
-        args_owner(args_t& args) :
-            args(args)
-        {
-        }
-        ~args_owner()
-        {
-            // We need to do this from a destructor in case calling the
-            // formatter throws an exception. We can't just do it in a catch
-            // clause because we want uncaught_exception to return true during
-            // the call.
-            args.~args_t();
-        }
-        args_t& args;
-    };
-    args_owner args(*reinterpret_cast<args_t*>(pinput + args_offset));
-
     typename make_index_sequence<sizeof...(Args)>::type indexes;
-    try {
-        formatter_dispatch_helper<Formatter>(poutput, args.args, indexes);
-    } catch(...) {
-        throw format_error(std::current_exception(), frame_size,
-                typeid(args_t));
-    }
 
-    return frame_size;
+    args_t& args = *reinterpret_cast<args_t*>(pinput + args_offset);
+
+    switch(op) {
+    case invoke_formatter:
+        formatter_dispatch_helper<Formatter>(poutput, args, indexes);
+        return 0;
+    case destroy:
+        args.~args_t();
+        return frame_size;
+    case get_typeid:
+        return reinterpret_cast<std::uintptr_t>(&typeid(args_t));
+    }
 }
 
 template <std::size_t FrameSize>
