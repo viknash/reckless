@@ -54,6 +54,7 @@ public:
         pframe_end_ = pcommit_end_;
     }
 
+    // Undo everything that has been written during the current input frame.
     void revert_frame()
     {
         pcommit_end_ = pframe_end_;

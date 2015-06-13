@@ -147,9 +147,9 @@ void output_buffer::flush()
     
     // Discard the data that was written, preserve data that remains. We could
     // avoid this copy by using a circular buffer, but in practice it should be
-    // very rare to have any data remaining in the buffer. It only happens if
-    // the buffer fills up entirely (forcing us to flush in the middle of a
-    // frame) or if there is an error in the writer.
+    // rare to have any data remaining in the buffer. It only happens if the
+    // buffer fills up entirely (forcing us to flush in the middle of a frame)
+    // or if there is an error in the writer.
     std::size_t remaining_data = (pcommit_end_ - pbuffer_) - written;
     std::memmove(pbuffer_, pbuffer_+written, remaining_data);
     pframe_end_ -= written;

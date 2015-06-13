@@ -105,6 +105,7 @@ void reckless::basic_log::output_worker()
     // Result of the last write attempt. Zero for no problems, or one of the
     // writer::errc values.
     unsigned error_state = 0;   
+    unsigned failed_input_frames = 0;
 
     // TODO if possible we should call signal_input_consumed() whenever the
     // output buffer is flushed, so threads aren't kept waiting indefinitely if
@@ -113,7 +114,7 @@ void reckless::basic_log::output_worker()
     touched_input_buffers.reserve(std::max(8u, 2*std::thread::hardware_concurrency()));
     while(true) {
         commit_extent ce;
-        pop_log_entries(ce);
+        pop_log_entries(ce, failed_input_frames);
             
         if(not ce.pinput_buffer) {
             // A null input-buffer pointer is the termination signal. Finish up
@@ -132,14 +133,16 @@ void reckless::basic_log::output_worker()
                 pdispatch = *reinterpret_cast<formatter_dispatch_function_t**>(pinput_start);
             }
 
+            bool retry = true;
             unsigned block_time_ms = 0;
-            do {
+            while(retry) {
+                retry = false;
                 try {
                     // Call formatter. This is what produces actual data in the
                     // output buffer.
                     (*pdispatch)(apply_formatter, &output_buffer_, pinput_start);
                 } catch(flush_error const& e) {
-                    output_buffer_.revert_frame();
+                    output_buffer_.revert_frame();  // Undo any half-written data during formatting.
                     error_policy ep;
                     if(e.code() == writer::temporary_error) {
                         error_state = writer::temporary_error;
@@ -151,10 +154,43 @@ void reckless::basic_log::output_worker()
 
                     switch(ep) {
                     case ignore:
+                        break;
                     case notify_on_recovery:
+                        // We will notify the client about this once the writer
+                        // starts working again.
+                        ++failed_input_frames;
                         break;
                     case block:
-                        
+                        // To give the client the appearance of blocking, we need to poll the
+                        // writer, i.e. check periodically whether writing is now working, until it
+                        // starts working again. We don't remove anything from the input queue while
+                        // this happens, hence any client threads that are writing log events will
+                        // start blocking once the input queue fills up. We use
+                        // shared_input_queue_full_event_ for an exponentially increasing wait time
+                        // between polls. That way we can check the panic-flush flag early, which
+                        // will be set in case the program crashes.
+                        //
+                        // If the program crashes while the writer is failing (not an unlikely
+                        // scenario since circumstances are already ominous), then we have a
+                        // dilemma. We could keep on blocking, but then we are withholding a
+                        // crashing program from generating a core dump until the writer starts
+                        // working. Or we could just throw the input queue away and pretend we're
+                        // done with the panic flush, so the program can die in peace. But then we
+                        // will lose log data that might be vital to determining the cause of the
+                        // crash. I've chosen the latter option, because I think it's not likely
+                        // that the log data will ever make it past the writer anyway, even if we do
+                        // keep on blocking.
+                        shared_input_queue_full_event_.wait(block_time_ms);
+                        if(panic_flush_) {
+                            on_panic_flush_done();
+                            return;
+                        }
+                        block_time_ms += std::max(1u, block_time_ms/4);
+                        block_time_ms = std::min(block_time_ms, 1000u);
+                        retry = true;
+                        break;
+                    case fail_immediately:
+                        // FIXME
                     }
                 } catch(...) {
                     std::lock_guard<std::mutex> lk(callback_mutex_);
@@ -166,7 +202,8 @@ void reckless::basic_log::output_worker()
                         } catch(...) {
                         }
                     }
-            } while(retry);
+                }
+            }
 
             auto frame_size = static_cast<std::size_t>((*pdispatch)(destroy, &output_buffer_, pinput_start));
             pinput_start = ce.pinput_buffer->discard_input_frame(frame_size);

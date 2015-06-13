@@ -140,7 +140,7 @@ private:
     format_error_callback_t format_error_callback_; // access synchronized by callback_mutex_
     std::thread output_thread_;
     spsc_event panic_flush_done_event_;
-    bool panic_flush_;
+    std::atomic_bool panic_flush_;
 };
 
 class format_error : public std::exception {

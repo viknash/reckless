@@ -18,7 +18,7 @@ public:
     };
     static std::error_category const& error_category();
     virtual ~writer() = 0;
-    virtual std::error_code write(void const* pbuffer, std::size_t count) = 0;
+    virtual std::error_code write(void const* pbuffer, std::size_t count) noexcept = 0;
 };
 
 inline std::error_condition make_error_condition(writer::errc ec)
