@@ -114,8 +114,38 @@ void reckless::basic_log::output_worker()
     touched_input_buffers.reserve(std::max(8u, 2*std::thread::hardware_concurrency()));
     while(true) {
         commit_extent ce;
-        pop_log_entries(ce, failed_input_frames);
-            
+        if(!shared_input_queue_->pop(ce)) {
+            if(unlikely(panic_flush_)) {
+                // We are in panic-flush mode and the queue is empty. That
+                // means we are done.
+                on_panic_flush_done();  // never returns
+                assert(false);
+            }
+
+            // The queue is empty; signal any threads that are waiting and then flush
+            // the output buffer.
+            shared_input_consumed_event_.signal();
+            for(thread_input_buffer* pinput_buffer : touched_input_buffers)
+                pinput_buffer->signal_input_consumed();
+            for(thread_input_buffer* pbuffer : touched_input_buffers)
+                pbuffer->input_consumed_flag = false;
+            touched_input_buffers.clear();
+            if(not output_buffer_.empty())
+                output_buffer_.flush();
+
+            // Wait until something comes in to the queue. Since logger threads do not
+            // normally signal any event (unless the queue fills up), we have to poll
+            // the queue. We use an exponential back off to not use too many CPU cycles
+            // and allow other threads to run, but we don't wait for more than one
+            // second.
+            unsigned wait_time_ms = 0;
+            while(not shared_input_queue_->pop(ce)) {
+                shared_input_queue_full_event_.wait(wait_time_ms);
+                wait_time_ms += std::max(1u, wait_time_ms/4);
+                wait_time_ms = std::min(wait_time_ms, 1000u);
+            }
+        }
+        
         if(not ce.pinput_buffer) {
             // A null input-buffer pointer is the termination signal. Finish up
             // and exit the worker thread.
@@ -216,42 +246,6 @@ void reckless::basic_log::output_worker()
                 }
             }
         }
-    }
-}
-
-void reckless::basic_log::pop_log_entries(detail::commit_extent& ce)
-{
-    if(shared_input_queue_->pop(ce))
-        return;
-
-    if(unlikely(panic_flush_)) {
-        // We are in panic-flush mode and the queue is empty. That
-        // means we are done.
-        on_panic_flush_done();  // never returns
-        assert(false);
-    }
-
-    // The queue is empty; signal any threads that are waiting and then flush
-    // the output buffer.
-    shared_input_consumed_event_.signal();
-    for(thread_input_buffer* pinput_buffer : touched_input_buffers)
-        pinput_buffer->signal_input_consumed();
-    for(thread_input_buffer* pbuffer : touched_input_buffers)
-        pbuffer->input_consumed_flag = false;
-    touched_input_buffers.clear();
-    if(not output_buffer_.empty())
-        output_buffer_.flush();
-
-    // Wait until something comes in to the queue. Since logger threads do not
-    // normally signal any event (unless the queue fills up), we have to poll
-    // the queue. We use an exponential back off to not use too many CPU cycles
-    // and allow other threads to run, but we don't wait for more than one
-    // second.
-    unsigned wait_time_ms = 0;
-    while(not shared_input_queue_->pop(ce)) {
-        shared_input_queue_full_event_.wait(wait_time_ms);
-        wait_time_ms += std::max(1u, wait_time_ms/4);
-        wait_time_ms = std::min(wait_time_ms, 1000u);
     }
 }
 

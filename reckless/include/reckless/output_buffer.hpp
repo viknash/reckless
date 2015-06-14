@@ -63,20 +63,10 @@ public:
     char* reserve(std::size_t size)
     {
         std::size_t remaining = pbuffer_end_ - pcommit_end_;
-        if(detail::likely(size <= remaining)) {
+        if(detail::likely(size <= remaining))
             return pcommit_end_;
-        } else {
+        else
             return reserve_slow_path(size);
-            // TODO if the flush fails above, the only thing we can do is discard
-            // the data. But perhaps we should invoke a callback that can do
-            // something, such as log a message about the discarded data.
-            // FIXME when does it actually fail though? Do we need an exception
-            // handler? This block should perhaps be made non-inline. Looks
-            // like we're not actually handling the return value of
-            // pwriter_->write().
-            if(static_cast<std::size_t>(pbuffer_end_ - pbuffer_) < size)
-                throw std::bad_alloc();
-        }
     }
 
     void commit(std::size_t size)
@@ -102,7 +92,8 @@ public:
     {
         return pcommit_end_ == pbuffer_;
     }
-    void flush();
+
+    std::error_code flush() noexcept;
 
 private:
     output_buffer(output_buffer const&) = delete;
@@ -115,7 +106,6 @@ private:
     char* pframe_end_;
     char* pcommit_end_;
     char* pbuffer_end_;
-    std::error_code error_state_;
 };
 
 }

@@ -106,7 +106,6 @@ protected:
 
 private:
     void output_worker();
-    void pop_log_entries(detail::commit_extent& ce);
     void queue_log_entries(detail::commit_extent const& ce);
     void reset_shared_input_queue(std::size_t node_count);
     detail::thread_input_buffer* get_input_buffer()

@@ -87,6 +87,8 @@ output_buffer::~output_buffer()
     std::free(pbuffer_);
 }
 
+// FIXME I think this code is wrong. Review and check it against the invariants
+// regarding error state etc.
 void output_buffer::write(void const* buf, std::size_t count)
 {
     // TODO this could be smarter by writing from the client-provided
@@ -109,7 +111,7 @@ void output_buffer::write(void const* buf, std::size_t count)
     pcommit_end_ += remaining_input;
 }
 
-void output_buffer::flush()
+std::error_code output_buffer::flush() noexcept
 {
     // TODO keep track of a high watermark, i.e. max value of pcommit_end_.
     // Clear every second or some such. Use madvise to release unused memory.
@@ -126,24 +128,33 @@ void output_buffer::flush()
     // writer as a shared_ptr, or at least by leaving a huge warning in the
     // documentation.
  
-    if(unlikely(error_state_ == writer::permanent_failure)) {
-        // If a permament failure has occurred, just keep on throwing away all
-        // input.
-        pcommit_end_ = pbuffer_;
-        return;
-    }
-    
     // If there is a temporary error for long enough that the buffer gets full
     // and we have to throw away data, but we resume writing later, then we do
     // not want to end up with half-written frames in the middle of the log
     // file. So, we only write data up until the end of the last complete input
     // frame.
     std::size_t count = pframe_end_ - pbuffer_;
-    std::error_code error;
     // NOTE if you get a crash here, it could be because your log object has a
     // longer lifetime than the writer (i.e. the writer has been destroyed
     // already).
-    std::size_t written = pwriter_->write(pbuffer_, count, error);
+    std::error_code ec;
+    std::size_t written;
+    try {
+        written = pwriter_->write(pbuffer_, count, ec)
+    } catch(...) {
+        // It is a fatal error for the writer to throw an exception, because we
+        // can't tell how much data was written to the target before the
+        // exception occurred. Errors should be reported via the error code
+        // parameter.
+        // TODO assign a more specific error code to this so the client can now
+        // what went wrong.
+        ec.assign(writer::permanent_failure, writer::error_category());
+        written = 0;
+    }
+    if(likely(!ec))
+        assert(written == count);   // A successful writer must write *all* data.
+    else
+        assert(written <= count);   // A failing writer may write all data, some data, or no data (but no more than that).
     
     // Discard the data that was written, preserve data that remains. We could
     // avoid this copy by using a circular buffer, but in practice it should be
@@ -155,9 +166,7 @@ void output_buffer::flush()
     pframe_end_ -= written;
     pcommit_end_ -= written;
     
-    if(likely(!error))
-        assert(written == count);   // A successful writer must write *all* data
-    error_state_ = error;
+    return ec;
 }
 
 char* output_buffer::reserve_slow_path(std::size_t size)
@@ -166,8 +175,8 @@ char* output_buffer::reserve_slow_path(std::size_t size)
     std::size_t buffer_size = pbuffer_end_ - pbuffer_;
     if(unlikely(frame_size > buffer_size))
         throw excessive_output_by_frame();
-    flush();
-    if(!error_state_) {
+    std::error_code ec = flush();
+    if(!ec) {
         // Since we did not throw excessive_output_by_frame above we know that
         // the projected frame size should fit within the buffer size. Since
         // the flush succeeded, all buffer space that does not belong to this
@@ -176,7 +185,7 @@ char* output_buffer::reserve_slow_path(std::size_t size)
         std::size_t remaining = pbuffer_end_ - pcommit_end_;
         assert(size <= remaining);
         return pcommit_end_;
-    } else if(error_state_ == writer::temporary_failure) {
+    } else if(ec == writer::temporary_failure) {
         std::size_t remaining = pbuffer_end_ - pcommit_end_;
         if(size <= remaining) {
             // The flush failed, but before failing it managed to free up
@@ -185,10 +194,10 @@ char* output_buffer::reserve_slow_path(std::size_t size)
         } else {
             // The writer is failing and we have no space in the output buffer.
             // We have to discard the data or give up.
-            throw flush_error();
+            throw flush_error(ec);
         }
-    } else if(error_state_ == writer::permanent_failure) {
-        throw flush_error();
+    } else if(ec == writer::permanent_failure) {
+        throw flush_error(ec);
     }
 }
 
