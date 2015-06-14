@@ -172,7 +172,7 @@ void reckless::basic_log::output_worker()
                     // output buffer.
                     (*pdispatch)(apply_formatter, &output_buffer_, pinput_start);
                 } catch(flush_error const& e) {
-                    output_buffer_.revert_frame();  // Undo any half-written data during formatting.
+                    output_buffer_.revert_frame();  // Undo any data that was partially written during formatting.
                     error_policy ep;
                     if(e.code() == writer::temporary_error) {
                         error_state = writer::temporary_error;
