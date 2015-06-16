@@ -105,7 +105,14 @@ protected:
     }
 
 private:
+    enum class error_handling_action {
+        next,
+        retry,
+        abort
+    };
+        
     void output_worker();
+    error_handling_resolution handle_flush_result(std::error_code const& ec, unsigned& lost_input_frames);
     void queue_log_entries(detail::commit_extent const& ce);
     void reset_shared_input_queue(std::size_t node_count);
     detail::thread_input_buffer* get_input_buffer()
@@ -118,12 +125,12 @@ private:
         }
     }
     detail::thread_input_buffer* init_input_buffer();
-    void on_panic_flush_done();
+    void on_panic_flush_done() __attribute__(noreturn)
     bool is_open()
     {
         return output_thread_.joinable();
     }
-
+    
     typedef boost_1_56_0::lockfree::queue<detail::commit_extent, boost_1_56_0::lockfree::fixed_sized<true>> shared_input_queue_t;
 
     //typedef detail::thread_object<detail::thread_input_buffer, std::size_t, std::size_t> thread_input_buffer_t;
