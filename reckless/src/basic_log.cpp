@@ -130,16 +130,15 @@ void basic_log::output_worker()
             touched_input_buffers.clear();
             if(not output_buffer_.empty()) {
                 std::error_code ec = flush();
-                switch(handle_flush_result(ec))
-                {
+                switch(handle_flush_result(ec)) {
                 case next:
                     break;
                 case retry:
                     retry = true;
+                    break;
                 case abort:
                     return;
                 }
-                
             }
 
             // Wait until something comes in to the queue. Since logger threads do not
