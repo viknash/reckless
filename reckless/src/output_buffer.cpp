@@ -257,23 +257,4 @@ char* output_buffer::reserve_slow_path(std::size_t size)
     }
 }
 
-void output_buffer::panic_flush()
-{
-    try {
-        flush();
-    } catch(...) {
-    };
-    on_panic_flush_done();
-}
-
-void output_buffer::on_panic_flush_done()
-{
-    panic_flush_done_event_.signal();
-    // Sleep and wait for death.
-    while(true)
-    {
-        sleep(3600);
-    }
-}
-
 }   // namespace reckless
