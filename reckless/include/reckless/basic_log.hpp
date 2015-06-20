@@ -26,13 +26,6 @@ namespace detail {
     std::size_t null_dispatch(output_buffer* poutput, char* pinput);
 }
 
-enum class error_policy {
-    ignore,
-    notify_on_recovery,
-    block,
-    fail_immediately
-};
-
 // TODO generic_log better name?
 class basic_log {
 public:
@@ -62,7 +55,7 @@ public:
         std::lock_guard<std::mutex> lk(callback_mutex_);
         format_error_callback_ = move(callback);
     }
-    void flush_error_callback(
+    void flush_error_callback();
 
     void panic_flush();
 

@@ -111,7 +111,7 @@ void output_buffer::write(void const* buf, std::size_t count)
     pcommit_end_ += remaining_input;
 }
 
-void output_buffer::flush() noexcept
+void output_buffer::flush()
 {
     // TODO keep track of a high watermark, i.e. max value of pcommit_end_.
     // Clear every second or some such. Use madvise to release unused memory.
@@ -185,12 +185,12 @@ void output_buffer::flush() noexcept
 
             switch(ep) {
             case ignore:
-                throw flush_error_discard_frame();
+                throw flush_error();
             case notify_on_recovery:
                 // We will notify the client about this once the writer
                 // starts working again.
                 ++lost_input_frames_;
-                throw flush_error_discard_frame();
+                throw flush_error();
             case block:
                 // To give the client the appearance of blocking, we need to poll the
                 // writer, i.e. check periodically whether writing is now working, until it
@@ -212,16 +212,13 @@ void output_buffer::flush() noexcept
                 // that the log data will ever make it past the writer anyway, even if we do
                 // keep on blocking.
                 shared_input_queue_full_event_.wait(block_time_ms);
-                if(panic_flush_) {
-                    on_panic_flush_done();
-                    return error_handling_action::abort;
-                }
+                if(panic_flush_)
+                    throw flush_error_fail_immediately();
                 block_time_ms += std::max(1u, block_time_ms/4);
                 block_time_ms = std::min(block_time_ms, 1000u);
                 break;
             case fail_immediately:
-                // FIXME
-                return error_handling_action::abort;
+                throw flush_error_fail_immediately();
             }
             return false;
         }
@@ -257,6 +254,25 @@ char* output_buffer::reserve_slow_path(std::size_t size)
         }
     } else if(ec == writer::permanent_failure) {
         throw flush_error(ec);
+    }
+}
+
+void output_buffer::panic_flush()
+{
+    try {
+        flush();
+    } catch(...) {
+    };
+    on_panic_flush_done();
+}
+
+void output_buffer::on_panic_flush_done()
+{
+    panic_flush_done_event_.signal();
+    // Sleep and wait for death.
+    while(true)
+    {
+        sleep(3600);
     }
 }
 

@@ -117,7 +117,7 @@ void basic_log::output_worker()
             if(unlikely(panic_flush_)) {
                 // We are in panic-flush mode and the queue is empty. That
                 // means we are done.
-                on_panic_flush_done();  // never returns
+                output_buffer_.panic_flush();  // never returns
             }
 
             // The queue is empty; signal any threads that are waiting and then flush
@@ -158,7 +158,7 @@ void basic_log::output_worker()
             // A null input-buffer pointer is the termination signal. Finish up
             // and exit the worker thread.
             if(unlikely(panic_flush_))
-                on_panic_flush_done(); // never returns
+                output_buffer_.panic_flush();  // never returns
             output_buffer_.flush();
             return;
         }
@@ -216,67 +216,6 @@ void basic_log::output_worker()
     }
 }
 
-error_handling_action basic_log::handle_flush_result(std::error_code const& ec, unsigned& lost_input_frames)
-{
-    if(likely(!ec)) {
-        if(unlikely(lost_input_frames)) {
-            // FIXME notify about lost frames
-        }
-        return error_handling_action::next;
-    }
-    
-    error_policy ep;
-    if(ec == writer::temporary_error) {
-        error_state = writer::temporary_error;
-        ep = temporary_error_policy_;
-    } else {
-        error_state = writer::permanent_error;
-        ep = permanent_error_policy_;
-    }
-
-    switch(ep) {
-    case ignore:
-        return;
-    case notify_on_recovery:
-        // We will notify the client about this once the writer
-        // starts working again.
-        ++lost_input_frames;
-        break;
-    case block:
-        // To give the client the appearance of blocking, we need to poll the
-        // writer, i.e. check periodically whether writing is now working, until it
-        // starts working again. We don't remove anything from the input queue while
-        // this happens, hence any client threads that are writing log events will
-        // start blocking once the input queue fills up. We use
-        // shared_input_queue_full_event_ for an exponentially increasing wait time
-        // between polls. That way we can check the panic-flush flag early, which
-        // will be set in case the program crashes.
-        //
-        // If the program crashes while the writer is failing (not an unlikely
-        // scenario since circumstances are already ominous), then we have a
-        // dilemma. We could keep on blocking, but then we are withholding a
-        // crashing program from generating a core dump until the writer starts
-        // working. Or we could just throw the input queue away and pretend we're
-        // done with the panic flush, so the program can die in peace. But then we
-        // will lose log data that might be vital to determining the cause of the
-        // crash. I've chosen the latter option, because I think it's not likely
-        // that the log data will ever make it past the writer anyway, even if we do
-        // keep on blocking.
-        shared_input_queue_full_event_.wait(block_time_ms);
-        if(panic_flush_) {
-            on_panic_flush_done();
-            return error_handling_action::abort;
-        }
-        block_time_ms += std::max(1u, block_time_ms/4);
-        block_time_ms = std::min(block_time_ms, 1000u);
-        return true;
-    case fail_immediately:
-        // FIXME
-        return error_handling_action::abort;
-    }
-    return false;
-}
-
 void basic_log::queue_log_entries(detail::commit_extent const& ce)
 {
     using namespace detail;
@@ -331,7 +270,13 @@ detail::thread_input_buffer* basic_log::init_input_buffer()
 
 void basic_log::on_panic_flush_done()
 {
-    output_buffer_.flush();
+    // We get one chance to flush what remains in the output buffer. If it
+    // fails now then we'll just have to live with that and crash.
+    try {
+        flush();
+    } catch(...) {
+    };
+
     panic_flush_done_event_.signal();
     // Sleep and wait for death.
     while(true)

@@ -9,21 +9,28 @@
 #include <system_error> // error_code
 
 namespace reckless {
+    
+enum class error_policy {
+    ignore,
+    notify_on_recovery,
+    block,
+    fail_immediately
+};
 
 // Thrown if output_buffer::reserve() is used to allocate more than can fit in
 // the output buffer during formatting of a single input frame. If this happens
 // then you need to either enlarge the output buffer or reduce the amount of
 // data produced by your formatter.
-class excessive_output_by_frame : public std::bad_alloc
-{
+class excessive_output_by_frame : public std::bad_alloc {
 public:
     char const* what() const override;
 };
 
-// Thrown if output_buffer::reserve() needs to call flush() in order to make
-// room in the buffer, but flush() fails.
-class flush_error : public std::bad_alloc
-{
+// Thrown if output_buffer::flush fails. This inherits from bad_alloc because
+// it makes sense in the context where the formatter calls
+// output_buffer::reserve(), and a flush intended to create more space in the
+// buffer fails. In that context, it is essentially an allocation error.
+class flush_error : public std::bad_alloc {
 public:
     char const* what() const override;
     std::error_code const& code() const
@@ -34,6 +41,24 @@ public:
 private:
     std::error_code error_code_;
 };
+
+// Thrown if output_buffer::flush fails and the error policy is
+// fail_immediately. The formatter should not prevent this exception from
+// propagating to the top of the call stack, as that will prevent the error
+// from being reported to the caller immediately as requested by the error
+// policy. It may also cause the log file to be corrupted, since half-written
+// log entries remain in the output buffer.
+class fatal_flush_error : public std::exception {
+public:
+    char const* what() const override;
+    std::error_code const& code() const
+    {
+        return error_code_;
+    }
+
+private:
+    std::error_code error_code_;
+}
 
 class output_buffer {
 public:
