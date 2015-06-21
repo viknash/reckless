@@ -77,6 +77,7 @@ public:
     void frame_end()
     {
         pframe_end_ = pcommit_end_;
+        ++input_frames_in_buffer_;
     }
 
     // Undo everything that has been written during the current input frame.

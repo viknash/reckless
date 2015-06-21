@@ -104,7 +104,6 @@ void basic_log::panic_flush()
 void basic_log::output_worker()
 {
     using namespace detail;
-    unsigned lost_input_frames = 0;
 
     // TODO if possible we should call signal_input_consumed() whenever the
     // output buffer is flushed, so threads aren't kept waiting indefinitely if
@@ -117,11 +116,11 @@ void basic_log::output_worker()
             if(unlikely(panic_flush_)) {
                 // We are in panic-flush mode and the queue is empty. That
                 // means we are done.
-                output_buffer_.panic_flush();  // never returns
+                on_panic_flush_done();  // never returns
             }
 
-            // The queue is empty; signal any threads that are waiting and then flush
-            // the output buffer.
+            // The queue is empty. Signal any threads that are waiting and then
+            // flush the output buffer.
             shared_input_consumed_event_.signal();
             for(thread_input_buffer* pinput_buffer : touched_input_buffers)
                 pinput_buffer->signal_input_consumed();
@@ -129,14 +128,12 @@ void basic_log::output_worker()
                 pbuffer->input_consumed_flag = false;
             touched_input_buffers.clear();
             if(not output_buffer_.empty()) {
-                std::error_code ec = flush();
-                switch(handle_flush_result(ec)) {
-                case next:
-                    break;
-                case retry:
-                    retry = true;
-                    break;
-                case abort:
+                try {
+                    output_buffer_.flush();
+                } catch(flush_error const&) {
+                } catch(fatal_flush_error const& e) {
+                    fatal_error_code_ = e.code();
+                    // FIXME throw error in the logging function
                     return;
                 }
             }

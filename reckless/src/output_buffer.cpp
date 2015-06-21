@@ -167,6 +167,8 @@ void output_buffer::flush()
         std::memmove(pbuffer_, pbuffer_+written, remaining_data);
         pframe_end_ -= written;
         pcommit_end_ -= written;
+        auto input_frames_in_buffer = input_frames_in_buffer_;
+        input_frames_in_buffer_ = 0;
 
         if(likely(!error)) {
             if(unlikely(lost_input_frames_)) {
@@ -189,7 +191,7 @@ void output_buffer::flush()
             case notify_on_recovery:
                 // We will notify the client about this once the writer
                 // starts working again.
-                ++lost_input_frames_;
+                lost_input_frames_ += input_frames_in_buffer;
                 throw flush_error();
             case block:
                 // To give the client the appearance of blocking, we need to poll the
