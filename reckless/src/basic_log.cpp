@@ -119,18 +119,23 @@ void basic_log::output_worker()
                 on_panic_flush_done();  // never returns
             }
 
-            // The queue is empty. Signal any threads that are waiting and then
-            // flush the output buffer.
+            // The input queue is empty. Signal any threads that are waiting
+            // and then flush the output buffer.
             shared_input_consumed_event_.signal();
             for(thread_input_buffer* pinput_buffer : touched_input_buffers)
                 pinput_buffer->signal_input_consumed();
             for(thread_input_buffer* pbuffer : touched_input_buffers)
                 pbuffer->input_consumed_flag = false;
             touched_input_buffers.clear();
-            if(not output_buffer_.empty()) {
+            if(not output_buffer::empty()) {
                 try {
-                    output_buffer_.flush();
+                    output_buffer::flush();
                 } catch(flush_error const&) {
+                    // Flush error is only thrown to unwind the stack from
+                    // output_buffer::reserve()/flush() so that the current
+                    // formatting operation can be aborted. No need to do
+                    // anything at this point as it has already been taken care
+                    // of in output_buffer::flush().
                 } catch(fatal_flush_error const& e) {
                     fatal_error_code_ = e.code();
                     // FIXME throw error in the logging function

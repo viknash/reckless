@@ -194,25 +194,28 @@ void output_buffer::flush()
                 lost_input_frames_ += input_frames_in_buffer;
                 throw flush_error();
             case block:
-                // To give the client the appearance of blocking, we need to poll the
-                // writer, i.e. check periodically whether writing is now working, until it
-                // starts working again. We don't remove anything from the input queue while
-                // this happens, hence any client threads that are writing log events will
-                // start blocking once the input queue fills up. We use
-                // shared_input_queue_full_event_ for an exponentially increasing wait time
-                // between polls. That way we can check the panic-flush flag early, which
-                // will be set in case the program crashes.
+                // To give the client the appearance of blocking, we need to
+                // poll the writer, i.e. check periodically whether writing is
+                // now working, until it starts working again. We don't remove
+                // anything from the input queue while this happens, hence any
+                // client threads that are writing log events will start
+                // blocking once the input queue fills up. We use
+                // shared_input_queue_full_event_ for an exponentially
+                // increasing wait time between polls. That way we can check
+                // the panic-flush flag early, which will be set in case the
+                // program crashes.
                 //
-                // If the program crashes while the writer is failing (not an unlikely
-                // scenario since circumstances are already ominous), then we have a
-                // dilemma. We could keep on blocking, but then we are withholding a
-                // crashing program from generating a core dump until the writer starts
-                // working. Or we could just throw the input queue away and pretend we're
-                // done with the panic flush, so the program can die in peace. But then we
-                // will lose log data that might be vital to determining the cause of the
-                // crash. I've chosen the latter option, because I think it's not likely
-                // that the log data will ever make it past the writer anyway, even if we do
-                // keep on blocking.
+                // If the program crashes while the writer is failing (not an
+                // unlikely scenario since circumstances are already ominous),
+                // then we have a dilemma. We could keep on blocking, but then
+                // we are withholding a crashing program from generating a core
+                // dump until the writer starts working. Or we could just throw
+                // the input queue away and pretend we're done with the panic
+                // flush, so the program can die in peace. But then we will
+                // lose log data that might be vital to determining the cause
+                // of the crash. I've chosen the latter option, because I think
+                // it's not likely that the log data will ever make it past the
+                // writer anyway, even if we do keep on blocking.
                 shared_input_queue_full_event_.wait(block_time_ms);
                 if(panic_flush_)
                     throw flush_error_fail_immediately();
@@ -233,30 +236,7 @@ char* output_buffer::reserve_slow_path(std::size_t size)
     std::size_t buffer_size = pbuffer_end_ - pbuffer_;
     if(unlikely(frame_size > buffer_size))
         throw excessive_output_by_frame();
-    std::error_code ec = flush();
-    if(!ec) {
-        // Since we did not throw excessive_output_by_frame above we know that
-        // the projected frame size should fit within the buffer size. Since
-        // the flush succeeded, all buffer space that does not belong to this
-        // frame should be available by now. So there should be enough room
-        // left for the requested size.
-        std::size_t remaining = pbuffer_end_ - pcommit_end_;
-        assert(size <= remaining);
-        return pcommit_end_;
-    } else if(ec == writer::temporary_failure) {
-        std::size_t remaining = pbuffer_end_ - pcommit_end_;
-        if(size <= remaining) {
-            // The flush failed, but before failing it managed to free up
-            // enough room to satisfy the request.
-            return pcommit_end_;
-        } else {
-            // The writer is failing and we have no space in the output buffer.
-            // We have to discard the data or give up.
-            throw flush_error(ec);
-        }
-    } else if(ec == writer::permanent_failure) {
-        throw flush_error(ec);
-    }
+    flush();
 }
 
 }   // namespace reckless

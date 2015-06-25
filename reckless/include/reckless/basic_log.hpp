@@ -27,7 +27,7 @@ namespace detail {
 }
 
 // TODO generic_log better name?
-class basic_log {
+class basic_log : private output_buffer {
 public:
     using format_error_callback_t = std::function<void (output_buffer*, std::exception_ptr const&, std::type_info const&)>;
     using flush_error_callback = std::function<void (output_buffer* 

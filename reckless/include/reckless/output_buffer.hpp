@@ -29,7 +29,10 @@ public:
 // Thrown if output_buffer::flush fails. This inherits from bad_alloc because
 // it makes sense in the context where the formatter calls
 // output_buffer::reserve(), and a flush intended to create more space in the
-// buffer fails. In that context, it is essentially an allocation error.
+// buffer fails. In that context, it is essentially an allocation error. The
+// formatter may catch this if it wishes, but it is expected that most will
+// just let it fall through to the worker thread, where it will be dealt with
+// appropriately.
 class flush_error : public std::bad_alloc {
 public:
     char const* what() const override;
@@ -71,21 +74,6 @@ public:
 
     output_buffer& operator=(output_buffer&& other);
 
-    // throw bad_alloc if unable to malloc() the buffer.
-    void reset(writer* pwriter, std::size_t max_capacity);
-
-    void frame_end()
-    {
-        pframe_end_ = pcommit_end_;
-        ++input_frames_in_buffer_;
-    }
-
-    // Undo everything that has been written during the current input frame.
-    void revert_frame()
-    {
-        pcommit_end_ = pframe_end_;
-    }
-    
     char* reserve(std::size_t size)
     {
         std::size_t remaining = pbuffer_end_ - pcommit_end_;
@@ -114,12 +102,30 @@ public:
         commit(1);
     }
     
+protected:
+    // throw bad_alloc if unable to malloc() the buffer.
+    void reset(writer* pwriter, std::size_t max_capacity);
+
+    void frame_end()
+    {
+        pframe_end_ = pcommit_end_;
+        ++input_frames_in_buffer_;
+    }
+
+    // Undo everything that has been written during the current input frame.
+    void revert_frame()
+    {
+        pcommit_end_ = pframe_end_;
+    }
+    
     bool empty() const
     {
         return pcommit_end_ == pbuffer_;
     }
 
-    std::error_code flush() noexcept;
+    void flush();
+    
+    spsc_event shared_input_queue_full_event_; // FIXME rename to something that indicates this is used for all "notifications" to the worker thread
 
 private:
     output_buffer(output_buffer const&) = delete;
