@@ -98,14 +98,9 @@ protected:
     }
 
 private:
-    enum class error_handling_action {
-        next,
-        retry,
-        abort
-    };
         
     void output_worker();
-    error_handling_resolution handle_flush_result(std::error_code const& ec, unsigned& lost_input_frames);
+    bool flush_with_error_handling();
     void queue_log_entries(detail::commit_extent const& ce);
     void reset_shared_input_queue(std::size_t node_count);
     detail::thread_input_buffer* get_input_buffer()
@@ -181,7 +176,7 @@ void formatter_dispatch_helper(output_buffer* poutput, std::tuple<Args...>& args
 }
 
 template <class Formatter, typename... Args>
-std::uintptr_t input_frame_dispatch(dispatch_op op, output_buffer* poutput, char* pinput)
+std::uintptr_t input_frame_dispatch(dispatch_operation operation, output_buffer* poutput, char* pinput)
 {
     using namespace detail;
     typedef std::tuple<Args...> args_t;
@@ -190,16 +185,28 @@ std::uintptr_t input_frame_dispatch(dispatch_op op, output_buffer* poutput, char
     std::size_t const frame_size = args_offset + sizeof(args_t);
     typename make_index_sequence<sizeof...(Args)>::type indexes;
 
-    args_t& args = *reinterpret_cast<args_t*>(pinput + args_offset);
-
-    switch(op) {
-    case invoke_formatter:
-        formatter_dispatch_helper<Formatter>(poutput, args, indexes);
-        return 0;
-    case destroy:
-        args.~args_t();
+    if(likely(operation == invoke_formatter)) {
+        struct args_owner {
+            args_holder(args_t& args) :
+                args(args)
+            {
+            }
+            ~args_holder()
+            {
+                // We need to do this from a destructor in case calling the
+                // formatter throws an exception. We can't just do it in a catch
+                // clause because we want uncaught_exception to return true during
+                // the call.
+                args.~args_t();
+            }
+            args_t& args;
+        };
+        args_owner args(*reinterpret_cast<args_t*>(pinput + args_offset));
+        formatter_dispatch_helper<Formatter>(poutput, args.args, indexes);
         return frame_size;
-    case get_typeid:
+    } else if(operation == get_frame_size) {
+        return frame_size;
+    } else if(operation == get_typeid) {
         return reinterpret_cast<std::uintptr_t>(&typeid(args_t));
     }
 }

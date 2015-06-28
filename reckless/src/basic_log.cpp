@@ -1,6 +1,8 @@
 #include <reckless/basic_log.hpp>
 
 #include <vector>
+#include <functional>   // bind
+#include <utility>      // forward
 #include <ciso646>
 
 #include <unistd.h>     // sleep
@@ -12,6 +14,29 @@ void destroy_thread_input_buffer(void* p)
     thread_input_buffer* pbuffer = static_cast<thread_input_buffer*>(p);
     thread_input_buffer::destroy(pbuffer);
 }
+
+// Call a function that invokes output_buffer::flush, and handle any exceptions
+// that might be thrown by flush(). Return false if the worker thread should
+// terminate due to errors.
+template <class F, class... Args>
+bool handle_flush_errors(F const& f)
+{
+    try {
+        f();
+    } catch(flush_error const&) {
+        // flush_error is only thrown to unwind the stack from
+        // output_buffer::reserve()/flush() so that the current
+        // formatting operation can be aborted. No need to do
+        // anything at this point as it has already been taken care
+        // of in output_buffer::flush().
+    } catch(fatal_flush_error const& e) {
+        fatal_error_code_ = e.code();
+        // FIXME throw error in the logging function
+        return false;
+    }
+    return true;
+}
+
 }
 
 namespace reckless {
@@ -128,19 +153,8 @@ void basic_log::output_worker()
                 pbuffer->input_consumed_flag = false;
             touched_input_buffers.clear();
             if(not output_buffer::empty()) {
-                try {
-                    output_buffer::flush();
-                } catch(flush_error const&) {
-                    // Flush error is only thrown to unwind the stack from
-                    // output_buffer::reserve()/flush() so that the current
-                    // formatting operation can be aborted. No need to do
-                    // anything at this point as it has already been taken care
-                    // of in output_buffer::flush().
-                } catch(fatal_flush_error const& e) {
-                    fatal_error_code_ = e.code();
-                    // FIXME throw error in the logging function
+                if(!handle_flush_errors([this](){ output_buffer::flush(); }))
                     return;
-                }
             }
 
             // Wait until something comes in to the queue. Since logger threads do not
@@ -160,8 +174,8 @@ void basic_log::output_worker()
             // A null input-buffer pointer is the termination signal. Finish up
             // and exit the worker thread.
             if(unlikely(panic_flush_))
-                output_buffer_.panic_flush();  // never returns
-            output_buffer_.flush();
+                output_buffer::panic_flush();  // never returns
+            handle_flush_errors([this](){ output_buffer::flush(); });
             return;
         }
 
@@ -173,38 +187,33 @@ void basic_log::output_worker()
                 pdispatch = *reinterpret_cast<formatter_dispatch_function_t**>(pinput_start);
             }
 
-            bool retry = true;
-            unsigned block_time_ms = 0;
-            while(retry) {
-                retry = false;
-                try {
-                    // Call formatter. This is what produces actual data in the
-                    // output buffer.
-                    (*pdispatch)(apply_formatter, &output_buffer_, pinput_start);
-                } catch(flush_error const& e) {
-                    output_buffer_.revert_frame();  // Undo any data that was partially written during formatting.
-                    switch(handle_flush_result(e.code(), lost_input_frames)) {
-                        case next:
-                            break;
-                        case retry:
-                            retry = true;
-                        case abort:
-                            return;
-                    }
-                } catch(...) {
-                    std::lock_guard<std::mutex> lk(callback_mutex_);
-                    if(format_error_callback_) {
-                        auto ti = *reinterpret_cast<std::type_info const*>((*pdispatch)(get_typeid, &output_buffer_, pinput_start));
-                        try {
-                            format_error_callback_(&output_buffer_,
-                                std::current_exception(), ti);
-                        } catch(...) {
-                        }
+            std::size_t frame_size;
+            try {
+                // Call formatter. This is what produces actual data in the
+                // output buffer.
+                if(!handle_flush_errors([this]() {
+                        frame_size = (*pdispatch)(invoke_formatter, this, pinput_start);
+                    }))
+                {
+                    return;
+                }
+            } catch(...) {
+                std::lock_guard<std::mutex> lk(callback_mutex_);
+                // TODO make the dispatch function a vararg function so we can
+                // take exactly the arguments that are needed, no more no less.
+                // Then we won't need two different operations to do this.
+                if(format_error_callback_) {
+                    auto ti = *reinterpret_cast<std::type_info const*>((*pdispatch)(get_typeid, this, pinput_start));
+                    try {
+                        format_error_callback_(&output_buffer_,
+                            std::current_exception(), ti);
+                    } catch(...) {
                     }
                 }
+                frame_size = static_cast<std::size_t>((*pdispatch)(get_frame_size, this, pinput_start));
             }
 
-            auto frame_size = static_cast<std::size_t>((*pdispatch)(destroy, &output_buffer_, pinput_start));
+            NEXT
             pinput_start = ce.pinput_buffer->discard_input_frame(frame_size);
             if(likely(!panic_flush_)) {
                 // If we're in panic-flush mode then we don't try to touch the
@@ -217,7 +226,6 @@ void basic_log::output_worker()
         }
     }
 }
-
 void basic_log::queue_log_entries(detail::commit_extent const& ce)
 {
     using namespace detail;
