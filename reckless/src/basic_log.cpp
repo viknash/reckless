@@ -144,8 +144,10 @@ void basic_log::output_worker()
                 on_panic_flush_done();  // never returns
             }
 
-            // The input queue is empty. Signal any threads that are waiting
-            // and then flush the output buffer.
+            // The input queue is empty. For all messages that we processed
+            // during this iteration, signal the originating threads that we
+            // have cleared their queues (they may be waiting for the queue to
+            // clear up). Then flush the output buffer.
             shared_input_consumed_event_.signal();
             for(thread_input_buffer* pinput_buffer : touched_input_buffers)
                 pinput_buffer->signal_input_consumed();
@@ -213,11 +215,14 @@ void basic_log::output_worker()
                 frame_size = static_cast<std::size_t>((*pdispatch)(get_frame_size, this, pinput_start));
             }
 
-            NEXT
             pinput_start = ce.pinput_buffer->discard_input_frame(frame_size);
+            
+            // Mark the originating thread's input buffer as having been
+            // accessed, i.e. if the thread is waiting for more space to become
+            // available then it should be notified once we are done processing
+            // log entries. We don't do this in panic-flush mode since it will
+            // unnecessarily risk a heap allocation.
             if(likely(!panic_flush_)) {
-                // If we're in panic-flush mode then we don't try to touch the
-                // heap-allocated vector.
                 if(not ce.pinput_buffer->input_consumed_flag) {
                     touched_input_buffers.push_back(ce.pinput_buffer);
                     ce.pinput_buffer->input_consumed_flag = true;
