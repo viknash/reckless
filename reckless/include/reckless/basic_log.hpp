@@ -21,9 +21,7 @@
 namespace reckless {
 namespace detail {
     template <class Formatter, typename... Args>
-    std::size_t formatter_dispatch(output_buffer* poutput, std::size_t* pframe_size, char* pinput);
-    template <std::size_t FrameSize>
-    std::size_t null_dispatch(output_buffer* poutput, char* pinput);
+    std::size_t input_frame_dispatch(output_buffer* poutput, std::size_t* pframe_size, char* pinput);
 }
 
 // TODO generic_log better name?
@@ -70,19 +68,15 @@ protected:
         std::size_t const frame_size = args_offset + sizeof(args_t);
 
         auto pbuffer = get_input_buffer();
+        auto marker = pbuffer->allocation_marker();
         char* pframe = pbuffer->allocate_input_frame(frame_size);
         *reinterpret_cast<formatter_dispatch_function_t**>(pframe) =
-            &detail::formatter_dispatch<Formatter, typename std::decay<Args>::type...>;
+            &detail::input_frame_dispatch<Formatter, typename std::decay<Args>::type...>;
 
         try {
             new (pframe + args_offset) args_t(std::forward<Args>(args)...);
         } catch(...) {
-            // Replace the formatter dispatch function pointer with a no-op
-            // equivalent that ignores the frame data and just returns the
-            // frame size. That way the frame will simply be consumed and ignored
-            *reinterpret_cast<formatter_dispatch_function_t**>(pframe) =
-                &detail::null_dispatch<frame_size>;
-            queue_log_entries({pbuffer, pbuffer->input_end()});
+            pbuffer->revert_allocation(marker);
             throw;
         }
 
@@ -176,7 +170,7 @@ void formatter_dispatch_helper(output_buffer* poutput, std::tuple<Args...>& args
 }
 
 template <class Formatter, typename... Args>
-std::uintptr_t input_frame_dispatch(dispatch_operation operation, output_buffer* poutput, char* pinput)
+std::size_t input_frame_dispatch(dispatch_operation operation, void* arg1, void* arg2)
 {
     using namespace detail;
     typedef std::tuple<Args...> args_t;
@@ -186,6 +180,8 @@ std::uintptr_t input_frame_dispatch(dispatch_operation operation, output_buffer*
     typename make_index_sequence<sizeof...(Args)>::type indexes;
 
     if(likely(operation == invoke_formatter)) {
+        auto poutput = static_cast<output_buffer*>(arg1);
+        auto pinput = static_cast<char*>(arg2);
         struct args_owner {
             args_holder(args_t& args) :
                 args(args)
@@ -201,20 +197,14 @@ std::uintptr_t input_frame_dispatch(dispatch_operation operation, output_buffer*
             }
             args_t& args;
         };
+        
         args_owner args(*reinterpret_cast<args_t*>(pinput + args_offset));
         formatter_dispatch_helper<Formatter>(poutput, args.args, indexes);
         return frame_size;
-    } else if(operation == get_frame_size) {
-        return frame_size;
     } else if(operation == get_typeid) {
-        return reinterpret_cast<std::uintptr_t>(&typeid(args_t));
+        *static_cast<std::typeinfo const**>(arg1) = &typeid(args_t);
+        return frame_size;
     }
-}
-
-template <std::size_t FrameSize>
-std::size_t null_dispatch(output_buffer*, char*)
-{
-    return FrameSize;
 }
 
 }   // namespace detail

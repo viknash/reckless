@@ -138,16 +138,17 @@ void basic_log::output_worker()
     while(true) {
         commit_extent ce;
         if(!shared_input_queue_->pop(ce)) {
+            // The shared input queue is empty, no new log messages to process.
             if(unlikely(panic_flush_)) {
                 // We are in panic-flush mode and the queue is empty. That
                 // means we are done.
                 on_panic_flush_done();  // never returns
             }
 
-            // The input queue is empty. For all messages that we processed
-            // during this iteration, signal the originating threads that we
-            // have cleared their queues (they may be waiting for the queue to
-            // clear up). Then flush the output buffer.
+            // For all messages that we processed during this iteration, signal
+            // the originating threads that we have cleared their thread-local
+            // queues (they may be waiting for the queue to clear up). Then
+            // flush the output buffer.
             shared_input_consumed_event_.signal();
             for(thread_input_buffer* pinput_buffer : touched_input_buffers)
                 pinput_buffer->signal_input_consumed();
@@ -159,11 +160,11 @@ void basic_log::output_worker()
                     return;
             }
 
-            // Wait until something comes in to the queue. Since logger threads do not
-            // normally signal any event (unless the queue fills up), we have to poll
-            // the queue. We use an exponential back off to not use too many CPU cycles
-            // and allow other threads to run, but we don't wait for more than one
-            // second.
+            // Wait until something comes in to the shared queue. Since logger
+            // threads do not normally signal any event (unless the queue fills
+            // up), we have to poll the queue. We use an exponential back off
+            // to not use too many CPU cycles and allow other threads to run,
+            // but we don't wait for more than one second.
             unsigned wait_time_ms = 0;
             while(not shared_input_queue_->pop(ce)) {
                 shared_input_queue_full_event_.wait(wait_time_ms);
@@ -181,6 +182,9 @@ void basic_log::output_worker()
             return;
         }
 
+        // For this thread-local input buffer, run through all available log
+        // entries and invoke their formatter to generate data for the output
+        // buffer.
         char* pinput_start = ce.pinput_buffer->input_start();
         while(pinput_start != ce.pcommit_end) {
             auto pdispatch = *reinterpret_cast<formatter_dispatch_function_t**>(pinput_start);
@@ -191,28 +195,26 @@ void basic_log::output_worker()
 
             std::size_t frame_size;
             try {
-                // Call formatter. This is what produces actual data in the
-                // output buffer.
+                // Call formatter.
                 if(!handle_flush_errors([this]() {
-                        frame_size = (*pdispatch)(invoke_formatter, this, pinput_start);
+                        frame_size = (*pdispatch)(invoke_formatter, static_cast<output_buffer*>(this), pinput_start);
                     }))
                 {
                     return;
                 }
             } catch(...) {
+                std::type_info const* pti;
+                frame_size = (*pdispatch)(get_typeid, &pti, nullptr);
                 std::lock_guard<std::mutex> lk(callback_mutex_);
-                // TODO make the dispatch function a vararg function so we can
-                // take exactly the arguments that are needed, no more no less.
-                // Then we won't need two different operations to do this.
                 if(format_error_callback_) {
-                    auto ti = *reinterpret_cast<std::type_info const*>((*pdispatch)(get_typeid, this, pinput_start));
                     try {
+                        NEXT make the format error callback a reality? Is it
+                        already? Anyway this is where we are right now.
                         format_error_callback_(&output_buffer_,
-                            std::current_exception(), ti);
+                            std::current_exception(), *pti);
                     } catch(...) {
                     }
                 }
-                frame_size = static_cast<std::size_t>((*pdispatch)(get_frame_size, this, pinput_start));
             }
 
             pinput_start = ce.pinput_buffer->discard_input_frame(frame_size);

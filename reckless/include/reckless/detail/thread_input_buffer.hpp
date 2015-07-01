@@ -42,8 +42,20 @@ public:
         p->~thread_input_buffer();
         delete [] static_cast<char*>(static_cast<void*>(p));
     }
+    // return marker to be used for revert_allocation()
+    char const* allocation_marker() const
+    {
+        return pinput_end_;
+    }
     // return pointer to allocated input frame, move input_end() forward.
     char* allocate_input_frame(std::size_t size);
+    // revert allocation made by allocate_input_frame. Can only be used to
+    // revert the last allocation attempt made, and must use marker returned by
+    // allocation_marker() right before the last allocation.
+    void revert_allocation(char const* marker)
+    {
+        pinput_end_ = const_cast<char*>(marker);
+    }
     // returns pointer to following input frame
     char* discard_input_frame(std::size_t size);
     char* wraparound();
