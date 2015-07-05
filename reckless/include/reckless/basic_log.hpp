@@ -12,6 +12,7 @@
 #include <thread>
 #include <functional>
 #include <tuple>
+#include <system_error> // system_error, error_code
 #include <exception>    // current_exception, exception_ptr
 #include <typeinfo>     // type_info
 #include <mutex>
@@ -75,20 +76,20 @@ protected:
 
         try {
             new (pframe + args_offset) args_t(std::forward<Args>(args)...);
+            // TODO ideally queue_log_entries would be called in a separate
+            // commit() or flush() function, but then we have to call
+            // get_input_buffer() twice which bloats the code at the call site. But
+            // if we make get_input_buffer() protected (i.e. move
+            // thread_input_buffer from the detail namespace) then we can delegate
+            // the call to get_input_buffer to the derived class, which could then
+            // call write multiple times followed by commit() if it wants to
+            // without having to fetch the TLS variable every time.
+            queue_log_entries({pbuffer, pbuffer->input_end()});
         } catch(...) {
             pbuffer->revert_allocation(marker);
             throw;
         }
 
-        // TODO ideally queue_log_entries would be called in a separate
-        // commit() or flush() function, but then we have to call
-        // get_input_buffer() twice which bloats the code at the call site. But
-        // if we make get_input_buffer() protected (i.e. move
-        // thread_input_buffer from the detail namespace) then we can delegate
-        // the call to get_input_buffer to the derived class, which could then
-        // call write multiple times followed by commit() if it wants to
-        // without having to fetch the TLS variable every time.
-        queue_log_entries({pbuffer, pbuffer->input_end()});
     }
 
 private:
@@ -132,6 +133,15 @@ private:
     std::atomic_bool panic_flush_;
     std::error_code fatal_error_code_
     std::atomic_bool fatal_error_flag_;
+};
+
+class writer_error : std::system_error {
+public:
+    writer_error(std::error_code ec) :
+        system_error(ec)
+    {
+    }
+    char const* what() const override;
 };
 
 class format_error : public std::exception {

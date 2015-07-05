@@ -10,18 +10,6 @@
 
 namespace {
 
-class fatal_worker_thread_error : public std::exception {
-public:
-    fatal_worker_thread_error(std::error_code const& code) : code_(code) {}
-    char const* what() override { return "fatal worker-thread error"; }
-    std::error_code const& code() const
-    {
-        return code_;
-    }
-private:
-    std::error_code code_;
-};
-
 void destroy_thread_input_buffer(void* p)
 {
     using reckless::detail::thread_input_buffer;
@@ -51,6 +39,11 @@ auto handle_flush_errors(F const& f) -> decltype(f())
 }   // anonymous namespace
 
 namespace reckless {
+
+char const* writer_error::what() const
+{
+    return "writer error";
+}
 
 basic_log::basic_log() :
     thread_input_buffer_size_(0),
@@ -110,7 +103,7 @@ void basic_log::open(writer* pwriter,
     reset_shared_input_queue(shared_input_queue_size);
     thread_input_buffer_size_ = thread_input_buffer_size;
     output_buffer_ = output_buffer(pwriter, output_buffer_max_capacity);
-    output_thread_ = std::thread(std::mem_fn(&basic_log::output_worker), this);
+    output_thread_ = std::thread(std::mem_fn(&basic_log::output_worker_wrapper), this);
 }
 
 void basic_log::close()
@@ -141,7 +134,7 @@ void basic_log::output_worker_wrapper()
 {
     try {
         output_worker();
-    } catch(fatal_worker_thread_error const& e) {
+    } catch(fatal_flush_error const& e) {
         fatal_error_code_ = e.code();
         fatal_error_flag_.store(true, std::memory_order_release);
     }
@@ -270,9 +263,8 @@ void basic_log::queue_log_entries(detail::commit_extent const& ce)
         while(true)
             sleep(3600);
     }
-    if(unlikely(fatal_error_flag_.load(std::memory_order_acquire))) {
-        throw std::
-    }
+    if(unlikely(fatal_error_flag_.load(std::memory_order_acquire)))
+        throw writer_error(fatal_error_code_);
     if(unlikely(not shared_input_queue_->push(ce))) {
         do {
             shared_input_queue_full_event_.signal();
