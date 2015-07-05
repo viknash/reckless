@@ -3,11 +3,25 @@
 #include <vector>
 #include <functional>   // bind
 #include <utility>      // forward
+#include <stdexcept>    // exception
 #include <ciso646>
 
 #include <unistd.h>     // sleep
 
 namespace {
+
+class fatal_worker_thread_error : public std::exception {
+public:
+    fatal_worker_thread_error(std::error_code const& code) : code_(code) {}
+    char const* what() override { return "fatal worker-thread error"; }
+    std::error_code const& code() const
+    {
+        return code_;
+    }
+private:
+    std::error_code code_;
+};
+
 void destroy_thread_input_buffer(void* p)
 {
     using reckless::detail::thread_input_buffer;
@@ -19,25 +33,22 @@ void destroy_thread_input_buffer(void* p)
 // that might be thrown by flush(). Return false if the worker thread should
 // terminate due to errors.
 template <class F, class... Args>
-bool handle_flush_errors(F const& f)
+auto handle_flush_errors(F const& f) -> decltype(f())
 {
     try {
-        f();
+        return f();
     } catch(flush_error const&) {
         // flush_error is only thrown to unwind the stack from
         // output_buffer::reserve()/flush() so that the current
         // formatting operation can be aborted. No need to do
         // anything at this point as it has already been taken care
         // of in output_buffer::flush().
-    } catch(fatal_flush_error const& e) {
-        fatal_error_code_ = e.code();
-        // FIXME throw error in the logging function
-        return false;
     }
-    return true;
+    // fatal_flush_error is just allowed to propagate up to
+    // output_worker_wrapper.
 }
 
-}
+}   // anonymous namespace
 
 namespace reckless {
 
@@ -126,6 +137,16 @@ void basic_log::panic_flush()
     panic_flush_done_event_.wait();
 }
 
+void basic_log::output_worker_wrapper()
+{
+    try {
+        output_worker();
+    } catch(fatal_worker_thread_error const& e) {
+        fatal_error_code_ = e.code();
+        fatal_error_flag_.store(true, std::memory_order_release);
+    }
+}
+
 void basic_log::output_worker()
 {
     using namespace detail;
@@ -156,8 +177,9 @@ void basic_log::output_worker()
                 pbuffer->input_consumed_flag = false;
             touched_input_buffers.clear();
             if(not output_buffer::empty()) {
-                if(!handle_flush_errors([this](){ output_buffer::flush(); }))
-                    return;
+                handle_flush_errors([this]() {
+                    output_buffer::flush();
+                });
             }
 
             // Wait until something comes in to the shared queue. Since logger
@@ -178,7 +200,9 @@ void basic_log::output_worker()
             // and exit the worker thread.
             if(unlikely(panic_flush_))
                 output_buffer::panic_flush();  // never returns
-            handle_flush_errors([this](){ output_buffer::flush(); });
+            handle_flush_errors([this]() {
+                    output_buffer::flush();
+                });
             return;
         }
 
@@ -196,20 +220,17 @@ void basic_log::output_worker()
             std::size_t frame_size;
             try {
                 // Call formatter.
-                if(!handle_flush_errors([this]() {
+                handle_flush_errors([this]() {
                         frame_size = (*pdispatch)(invoke_formatter, static_cast<output_buffer*>(this), pinput_start);
-                    }))
-                {
-                    return;
-                }
+                    });
+            } catch(fatal_worker_thread_error const&) {
+                throw;
             } catch(...) {
                 std::type_info const* pti;
                 frame_size = (*pdispatch)(get_typeid, &pti, nullptr);
                 std::lock_guard<std::mutex> lk(callback_mutex_);
                 if(format_error_callback_) {
                     try {
-                        NEXT make the format error callback a reality? Is it
-                        already? Anyway this is where we are right now.
                         format_error_callback_(&output_buffer_,
                             std::current_exception(), *pti);
                     } catch(...) {
@@ -248,6 +269,9 @@ void basic_log::queue_log_entries(detail::commit_extent const& ce)
         // for the kill.
         while(true)
             sleep(3600);
+    }
+    if(unlikely(fatal_error_flag_.load(std::memory_order_acquire))) {
+        throw std::
     }
     if(unlikely(not shared_input_queue_->push(ce))) {
         do {

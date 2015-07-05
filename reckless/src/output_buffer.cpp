@@ -120,14 +120,6 @@ void output_buffer::flush()
     // it's user-provided code we should handle exceptions. The same
     // goes for any calls to formatter functions.
  
-    // FIXME the crash mentioned below happens if you have g_log as a global
-    // object and have a writer with local scope (e.g. in main()), *even if you
-    // do not write to the log after the writer goes out of scope*, because
-    // there can be stuff lingering in the async queue. This makes the error
-    // pretty obscure, and we should guard against it. Perhaps by taking the
-    // writer as a shared_ptr, or at least by leaving a huge warning in the
-    // documentation.
- 
     // If there is a temporary error for long enough that the buffer gets full
     // and we have to throw away data, but we resume writing later, then we do
     // not want to end up with half-written frames in the middle of the log
@@ -139,24 +131,32 @@ void output_buffer::flush()
         std::error_code error;
         std::size_t written;
         try {
+            // FIXME the crash mentioned below happens if you have g_log as a
+            // global object and have a writer with local scope (e.g. in
+            // main()), *even if you do not write to the log after the writer
+            // goes out of scope*, because there can be stuff lingering in the
+            // async queue. This makes the error pretty obscure, and we should
+            // guard against it. Perhaps by taking the writer as a shared_ptr,
+            // or at least by leaving a huge warning in the documentation.
+
             // NOTE if you get a crash here, it could be because your log object has a
             // longer lifetime than the writer (i.e. the writer has been destroyed
             // already).
             written = pwriter_->write(pbuffer_, remaining, error)
         } catch(...) {
-            // It is a fatal error for the writer to throw an exception, because we
-            // can't tell how much data was written to the target before the
-            // exception occurred. Errors should be reported via the error code
-            // parameter.
-            // TODO assign a more specific error code to this so the client can now
-            // what went wrong.
+            // It is a fatal error for the writer to throw an exception,
+            // because we can't tell how much data was written to the target
+            // before the exception occurred. Errors should be reported via the
+            // error code parameter.
+            // TODO assign a more specific error code to this so the client can
+            // know what went wrong.
             error.assign(writer::permanent_failure, writer::error_category());
             written = 0;
         }
         if(likely(!error))
             assert(written == count);   // A successful writer must write *all* data.
         else
-            assert(written <= count);   // A failing writer may write all data, some data, or no data (but no more than that).
+            assert(written <= count);   // A failing writer may write no data, some data, or all data (but no more than that).
         
         // Discard the data that was written, preserve data that remains. We could
         // avoid this copy by using a circular buffer, but in practice it should be
@@ -170,11 +170,18 @@ void output_buffer::flush()
         auto input_frames_in_buffer = input_frames_in_buffer_;
         input_frames_in_buffer_ = 0;
 
+        NEXT we need to overhaul the error reporting... again. Now that we are
+        throwing an exception all the way to the top of the worker thread, it
+        bounces too many times on the way up. The fail_immediately case should
+        be able to throw something like writer_error which is caught at the top.
+        And we should be able to just re-throw that from the logger thread.
+
         if(likely(!error)) {
             if(unlikely(lost_input_frames_)) {
                 // FIXME notify about lost frames
                 lost_input_frames_ = 0;
             }
+            return;
         } else {
             error_policy ep;
             if(ec == writer::temporary_error) {
@@ -187,12 +194,12 @@ void output_buffer::flush()
 
             switch(ep) {
             case ignore:
-                throw flush_error();
+                throw flush_error(ec);
             case notify_on_recovery:
                 // We will notify the client about this once the writer
                 // starts working again.
                 lost_input_frames_ += input_frames_in_buffer;
-                throw flush_error();
+                throw flush_error(ec);
             case block:
                 // To give the client the appearance of blocking, we need to
                 // poll the writer, i.e. check periodically whether writing is
@@ -218,14 +225,13 @@ void output_buffer::flush()
                 // writer anyway, even if we do keep on blocking.
                 shared_input_queue_full_event_.wait(block_time_ms);
                 if(panic_flush_)
-                    throw flush_error_fail_immediately();
+                    throw fatal_flush_error(ec);
                 block_time_ms += std::max(1u, block_time_ms/4);
                 block_time_ms = std::min(block_time_ms, 1000u);
                 break;
             case fail_immediately:
-                throw flush_error_fail_immediately();
+                throw fatal_fluh_error(ec);
             }
-            return false;
         }
     }
 }

@@ -124,11 +124,14 @@ private:
     pthread_key_t thread_input_buffer_key_;
     std::size_t thread_input_buffer_size_;
     output_buffer output_buffer_;
+    
     std::mutex callback_mutex_;
     format_error_callback_t format_error_callback_; // access synchronized by callback_mutex_
     std::thread output_thread_;
     spsc_event panic_flush_done_event_;
     std::atomic_bool panic_flush_;
+    std::error_code fatal_error_code_
+    std::atomic_bool fatal_error_flag_;
 };
 
 class format_error : public std::exception {

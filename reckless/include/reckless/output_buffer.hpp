@@ -35,6 +35,10 @@ public:
 // appropriately.
 class flush_error : public std::bad_alloc {
 public:
+    flush_error(std::error_code const& error_code) :
+        error_code_(error_code)
+    {
+    }
     char const* what() const override;
     std::error_code const& code() const
     {
@@ -49,10 +53,14 @@ private:
 // fail_immediately. The formatter should not prevent this exception from
 // propagating to the top of the call stack, as that will prevent the error
 // from being reported to the caller immediately as requested by the error
-// policy. It may also cause the log file to be corrupted, since half-written
-// log entries remain in the output buffer.
+// policy. Preventing it from propagating may also cause the log file to be
+// corrupted, since half-written log entries remain in the output buffer.
 class fatal_flush_error : public std::exception {
 public:
+    fatal_flush_error(std::error_code const& error_code) :
+        error_code_(error_code)
+    {
+    }
     char const* what() const override;
     std::error_code const& code() const
     {
