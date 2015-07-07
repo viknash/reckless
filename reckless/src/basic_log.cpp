@@ -102,7 +102,7 @@ void basic_log::open(writer* pwriter,
     assert(!is_open());
     reset_shared_input_queue(shared_input_queue_size);
     thread_input_buffer_size_ = thread_input_buffer_size;
-    output_buffer_ = output_buffer(pwriter, output_buffer_max_capacity);
+    output_buffer::reset(pwriter, output_buffer_max_capacity);
     output_thread_ = std::thread(std::mem_fn(&basic_log::output_worker_wrapper), this);
 }
 
@@ -116,7 +116,7 @@ void basic_log::close()
     output_thread_.join();
     assert(shared_input_queue_->empty());
     
-    output_buffer_ = output_buffer();
+    output_buffer::reset();
     thread_input_buffer_size_ = 0;
     shared_input_queue_ = std::experimental::nullopt;
     assert(!is_open());
@@ -224,8 +224,8 @@ void basic_log::output_worker()
                 std::lock_guard<std::mutex> lk(callback_mutex_);
                 if(format_error_callback_) {
                     try {
-                        format_error_callback_(&output_buffer_,
-                            std::current_exception(), *pti);
+                        format_error_callback_(this, std::current_exception(),
+                                *pti);
                     } catch(...) {
                     }
                 }

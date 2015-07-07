@@ -6,7 +6,7 @@
 #include <cstddef>  // size_t
 #include <new>      // bad_alloc
 #include <cstring>  // strlen, memcpy
-#include <system_error> // error_code
+#include <system_error> // system_error, error_code
 
 namespace reckless {
     
@@ -55,7 +55,7 @@ private:
 // from being reported to the caller immediately as requested by the error
 // policy. Preventing it from propagating may also cause the log file to be
 // corrupted, since half-written log entries remain in the output buffer.
-class fatal_flush_error : public std::exception {
+class fatal_flush_error : public std::system_error {
 public:
     fatal_flush_error(std::error_code const& error_code) :
         error_code_(error_code)
@@ -71,16 +71,15 @@ private:
     std::error_code error_code_;
 }
 
+using flush_error_callback_t = std::function<void (std::error_code ec, unsigned lost_record_count)>;
+
 class output_buffer {
 public:
     output_buffer();
     // TODO hide functions that are not relevant to the client, e.g. move
     // assignment, empty(), flush etc?
-    output_buffer(output_buffer&& other);
     output_buffer(writer* pwriter, std::size_t max_capacity);
     ~output_buffer();
-
-    output_buffer& operator=(output_buffer&& other);
 
     char* reserve(std::size_t size)
     {
@@ -111,6 +110,7 @@ public:
     }
     
 protected:
+    void reset();
     // throw bad_alloc if unable to malloc() the buffer.
     void reset(writer* pwriter, std::size_t max_capacity);
 
@@ -133,6 +133,14 @@ protected:
 
     void flush();
     
+    NEXT add mutex etc, and introduce this function in basic_log through using statement.
+    Then...? Compile?
+    void flush_error_callback(flush_error_callback_t callback = flush_error_callback_t())
+    {
+        std::lock_guard<std::mutex> lk(callback_mutex_);
+        flush_error_callback_ = move(callback);
+    }
+    
     spsc_event shared_input_queue_full_event_; // FIXME rename to something that indicates this is used for all "notifications" to the worker thread
 
 private:
@@ -146,6 +154,8 @@ private:
     char* pframe_end_;
     char* pcommit_end_;
     char* pbuffer_end_;
+    unsigned input_frames_in_buffer_;
+    unsigned lost_input_frames_;
 };
 
 }

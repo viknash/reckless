@@ -19,51 +19,27 @@ output_buffer::output_buffer() :
     pwriter_(nullptr),
     pbuffer_(nullptr),
     pcommit_end_(nullptr),
-    pbuffer_end_(nullptr)
+    pbuffer_end_(nullptr),
+    input_frames_in_buffer_(0),
+    lost_input_frames_(0)
 {
 }
 
 output_buffer::output_buffer(writer* pwriter, std::size_t max_capacity) :
-    pwriter_(nullptr),
-    pbuffer_(nullptr),
-    pcommit_end_(nullptr),
-    pbuffer_end_(nullptr)
+    output_buffer()
 {
     reset(pwriter, max_capacity);
 }
 
-output_buffer::output_buffer(output_buffer&& other)
-{
-    pwriter_ = other.pwriter_;
-    pbuffer_ = other.pbuffer_;
-    pcommit_end_ = other.pcommit_end_;
-    pbuffer_end_ = other.pbuffer_end_;
-    error_state_ = other.error_state_;
-
-    other.pwriter_ = nullptr;
-    other.pbuffer_ = nullptr;
-    other.pcommit_end_ = nullptr;
-    other.pbuffer_end_ = nullptr;
-    other.error_state_.clear();
-}
-
-output_buffer& output_buffer::operator=(output_buffer&& other)
+void output_buffer::reset()
 {
     std::free(pbuffer_);
-
-    pwriter_ = other.pwriter_;
-    pbuffer_ = other.pbuffer_;
-    pcommit_end_ = other.pcommit_end_;
-    pbuffer_end_ = other.pbuffer_end_;
-    error_state_ = other.error_state_;
-
-    other.pwriter_ = nullptr;
-    other.pbuffer_ = nullptr;
-    other.pcommit_end_ = nullptr;
-    other.pbuffer_end_ = nullptr;
-    other.error_state_.clear();
-
-    return *this;
+    pwriter = nullptr;
+    pbuffer = nullptr;
+    pcommit_end = nullptr;
+    pbuffer_end = nullptr;
+    input_frames_in_buffer_ = 0;
+    lost_input_frames_ = 0;
 }
 
 void output_buffer::reset(writer* pwriter, std::size_t max_capacity)

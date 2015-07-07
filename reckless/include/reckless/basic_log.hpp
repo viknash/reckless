@@ -25,12 +25,11 @@ namespace detail {
     std::size_t input_frame_dispatch(output_buffer* poutput, std::size_t* pframe_size, char* pinput);
 }
 
+using format_error_callback_t = std::function<void (output_buffer*, std::exception_ptr const&, std::type_info const&)>;
+
 // TODO generic_log better name?
 class basic_log : private output_buffer {
 public:
-    using format_error_callback_t = std::function<void (output_buffer*, std::exception_ptr const&, std::type_info const&)>;
-    using flush_error_callback = std::function<void (output_buffer* 
-    
     basic_log();
     // FIXME shared_input_queue_size seems like the least interesting of these
     // and should be moved to the end.
@@ -54,7 +53,6 @@ public:
         std::lock_guard<std::mutex> lk(callback_mutex_);
         format_error_callback_ = move(callback);
     }
-    void flush_error_callback();
 
     void panic_flush();
 
