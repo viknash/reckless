@@ -54,6 +54,8 @@ public:
         format_error_callback_ = move(callback);
     }
 
+    using output_buffer::flush_error_callback;
+    
     void panic_flush();
 
 protected:

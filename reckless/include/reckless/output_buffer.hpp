@@ -2,13 +2,17 @@
 #define RECKLESS_OUTPUT_BUFFER_HPP
 
 #include "detail/branch_hints.hpp"
+#include "detail/spsc_event.hpp"
 
 #include <cstddef>  // size_t
 #include <new>      // bad_alloc
 #include <cstring>  // strlen, memcpy
+#include <functional>   // function
+#include <mutex>
 #include <system_error> // system_error, error_code
 
 namespace reckless {
+class writer;
     
 enum class error_policy {
     ignore,
@@ -23,7 +27,7 @@ enum class error_policy {
 // data produced by your formatter.
 class excessive_output_by_frame : public std::bad_alloc {
 public:
-    char const* what() const override;
+    char const* what() const noexcept override;
 };
 
 // Thrown if output_buffer::flush fails. This inherits from bad_alloc because
@@ -39,7 +43,7 @@ public:
         error_code_(error_code)
     {
     }
-    char const* what() const override;
+    char const* what() const noexcept override;
     std::error_code const& code() const
     {
         return error_code_;
@@ -61,7 +65,7 @@ public:
         error_code_(error_code)
     {
     }
-    char const* what() const override;
+    char const* what() const noexcept override;
     std::error_code const& code() const
     {
         return error_code_;
@@ -69,7 +73,7 @@ public:
 
 private:
     std::error_code error_code_;
-}
+};
 
 using flush_error_callback_t = std::function<void (std::error_code ec, unsigned lost_record_count)>;
 
@@ -133,11 +137,9 @@ protected:
 
     void flush();
     
-    NEXT add mutex etc, and introduce this function in basic_log through using statement.
-    Then...? Compile?
     void flush_error_callback(flush_error_callback_t callback = flush_error_callback_t())
     {
-        std::lock_guard<std::mutex> lk(callback_mutex_);
+        std::lock_guard<std::mutex> lk(flush_error_callback_mutex_);
         flush_error_callback_ = move(callback);
     }
     
@@ -156,6 +158,9 @@ private:
     char* pbuffer_end_;
     unsigned input_frames_in_buffer_;
     unsigned lost_input_frames_;
+    std::error_code initial_error_;         // Keeps track of the first error that caused lost_input_frames_ to become non-zero.
+    std::mutex flush_error_callback_mutex_;
+    flush_error_callback_t flush_error_callback_;
 };
 
 }

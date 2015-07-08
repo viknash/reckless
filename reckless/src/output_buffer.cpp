@@ -7,7 +7,7 @@
 
 namespace reckless {
 
-excessive_output_by_frame::what() const
+excessive_output_by_frame::what() const noexcept
 {
     return "excessive output by frame";
 }
@@ -146,16 +146,17 @@ void output_buffer::flush()
         auto input_frames_in_buffer = input_frames_in_buffer_;
         input_frames_in_buffer_ = 0;
 
-        NEXT we need to overhaul the error reporting... again. Now that we are
-        throwing an exception all the way to the top of the worker thread, it
-        bounces too many times on the way up. The fail_immediately case should
-        be able to throw something like writer_error which is caught at the top.
-        And we should be able to just re-throw that from the logger thread.
-
         if(likely(!error)) {
             if(unlikely(lost_input_frames_)) {
                 // FIXME notify about lost frames
+                auto lif = lost_input_frames_;
                 lost_input_frames_ = 0;
+                flush_error_callback_t callback;
+                {
+                    std::lock_guard<std::mutex> lk(flush_error_callback_mutex_);
+                    callback = flush_error_callback_;
+                }
+                callback(ec, lif);
             }
             return;
         } else {
@@ -174,6 +175,8 @@ void output_buffer::flush()
             case notify_on_recovery:
                 // We will notify the client about this once the writer
                 // starts working again.
+                if(!lost_input_frames_)
+                    initial_error_ = error;
                 lost_input_frames_ += input_frames_in_buffer;
                 throw flush_error(ec);
             case block:
