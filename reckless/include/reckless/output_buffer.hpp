@@ -144,6 +144,9 @@ protected:
     }
     
     spsc_event shared_input_queue_full_event_; // FIXME rename to something that indicates this is used for all "notifications" to the worker thread
+    
+    std::atomic<error_policy> temporary_error_policy_;
+    std::atomic<error_policy> permanent_error_policy_;
 
 private:
     output_buffer(output_buffer const&) = delete;

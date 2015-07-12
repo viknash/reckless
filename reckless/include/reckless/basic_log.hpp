@@ -55,6 +55,26 @@ public:
     }
 
     using output_buffer::flush_error_callback;
+
+    error_policy temporary_error_policy() const
+    {
+        return temporary_error_policy_.load(std::memory_order_relaxed);
+    }
+    
+    void temporary_error_policy(error_policy ep)
+    {
+        temporary_error_policy_.store(ep, std::memory_order_relaxed);
+    }
+    
+    error_policy fatal_error_policy(error_policy ep) const
+    {
+        fatal_error_policy_.load(std::memory_order_relaxed);
+    }
+    
+    void fatal_error_policy(error_policy ep)
+    {
+        fatal_error_policy_.store(ep, std::memory_order_relaxed);
+    }
     
     void panic_flush();
 

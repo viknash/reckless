@@ -3,11 +3,12 @@
 #include <reckless/detail/utility.hpp>
 
 #include <cstdlib>      // malloc, free
+#include <cassert>
 #include <sys/mman.h>   // madvise()
 
 namespace reckless {
 
-excessive_output_by_frame::what() const noexcept
+char const* excessive_output_by_frame::what() const noexcept
 {
     return "excessive output by frame";
 }
@@ -16,6 +17,8 @@ using detail::likely;
 using detail::unlikely;
 
 output_buffer::output_buffer() :
+    temporary_error_policy_(notify_on_recovery),
+    permanent_error_policy_(fail_immediately),
     pwriter_(nullptr),
     pbuffer_(nullptr),
     pcommit_end_(nullptr),
@@ -34,10 +37,10 @@ output_buffer::output_buffer(writer* pwriter, std::size_t max_capacity) :
 void output_buffer::reset()
 {
     std::free(pbuffer_);
-    pwriter = nullptr;
-    pbuffer = nullptr;
-    pcommit_end = nullptr;
-    pbuffer_end = nullptr;
+    pwriter_ = nullptr;
+    pbuffer_ = nullptr;
+    pcommit_end_ = nullptr;
+    pbuffer_end_ = nullptr;
     input_frames_in_buffer_ = 0;
     lost_input_frames_ = 0;
 }
@@ -118,7 +121,7 @@ void output_buffer::flush()
             // NOTE if you get a crash here, it could be because your log object has a
             // longer lifetime than the writer (i.e. the writer has been destroyed
             // already).
-            written = pwriter_->write(pbuffer_, remaining, error)
+            written = pwriter_->write(pbuffer_, remaining, error);
         } catch(...) {
             // It is a fatal error for the writer to throw an exception,
             // because we can't tell how much data was written to the target
@@ -130,9 +133,9 @@ void output_buffer::flush()
             written = 0;
         }
         if(likely(!error))
-            assert(written == count);   // A successful writer must write *all* data.
+            assert(written == remaining);   // A successful writer must write *all* data.
         else
-            assert(written <= count);   // A failing writer may write no data, some data, or all data (but no more than that).
+            assert(written <= remaining);   // A failing writer may write no data, some data, or all data (but no more than that).
         
         // Discard the data that was written, preserve data that remains. We could
         // avoid this copy by using a circular buffer, but in practice it should be
@@ -156,30 +159,27 @@ void output_buffer::flush()
                     std::lock_guard<std::mutex> lk(flush_error_callback_mutex_);
                     callback = flush_error_callback_;
                 }
-                callback(ec, lif);
+                callback(error, lif);
             }
             return;
         } else {
             error_policy ep;
-            if(ec == writer::temporary_error) {
-                error_state = writer::temporary_error;
-                ep = temporary_error_policy_;
-            } else {
-                error_state = writer::permanent_error;
-                ep = permanent_error_policy_;
-            }
+            if(error == writer::temporary_failure)
+                ep = temporary_error_policy_.load(std::memory_order_relaxed);
+            else
+                ep = permanent_error_policy_.load(std::memory_order_relaxed);
 
             switch(ep) {
-            case ignore:
-                throw flush_error(ec);
-            case notify_on_recovery:
+            case error_policy::ignore:
+                throw flush_error(error);
+            case error_policy::notify_on_recovery:
                 // We will notify the client about this once the writer
                 // starts working again.
                 if(!lost_input_frames_)
                     initial_error_ = error;
                 lost_input_frames_ += input_frames_in_buffer;
-                throw flush_error(ec);
-            case block:
+                throw flush_error(error);
+            case error_policy::block:
                 // To give the client the appearance of blocking, we need to
                 // poll the writer, i.e. check periodically whether writing is
                 // now working, until it starts working again. We don't remove
@@ -204,12 +204,12 @@ void output_buffer::flush()
                 // writer anyway, even if we do keep on blocking.
                 shared_input_queue_full_event_.wait(block_time_ms);
                 if(panic_flush_)
-                    throw fatal_flush_error(ec);
+                    throw fatal_flush_error(error);
                 block_time_ms += std::max(1u, block_time_ms/4);
                 block_time_ms = std::min(block_time_ms, 1000u);
                 break;
-            case fail_immediately:
-                throw fatal_fluh_error(ec);
+            case error_policy::fail_immediately:
+                throw fatal_fluh_error(error);
             }
         }
     }
