@@ -17,8 +17,8 @@ using detail::likely;
 using detail::unlikely;
 
 output_buffer::output_buffer() :
-    temporary_error_policy_(notify_on_recovery),
-    permanent_error_policy_(fail_immediately),
+    temporary_error_policy_(error_policy:::notify_on_recovery),
+    permanent_error_policy_(error_policy::fail_immediately),
     pwriter_(nullptr),
     pbuffer_(nullptr),
     pcommit_end_(nullptr),
