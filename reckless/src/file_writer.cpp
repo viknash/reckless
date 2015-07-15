@@ -83,22 +83,22 @@ reckless::file_writer::~file_writer()
         close(fd_);
 }
 
-std::error_code reckless::file_writer::write(void const* pbuffer, std::size_t count)
+std::size_t reckless::file_writer::write(void const* pbuffer, std::size_t count, std::error_code& ec) noexcept
 {
     char const* p = static_cast<char const*>(pbuffer);
-    while(count != 0) {
+    char const* pend = p + count;
+    ec.clear();
+    while(p != pend) {
         ssize_t written = ::write(fd_, p, count);
         if(written == -1) {
-            if(errno != EINTR)
+            if(errno != EINTR) {
+                ec.assign(errno, get_error_category());
                 break;
+            }
         } else {
             p += written;
-            count -= written;
         }
     }
-    if(count == 0)
-        return std::error_code(ENOSPC, get_error_category());
-        //return std::error_code();
+    return p - static_cast<char const*>(pbuffer);
 
-    return std::error_code(errno, get_error_category());
 }

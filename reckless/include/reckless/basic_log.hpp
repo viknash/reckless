@@ -22,7 +22,7 @@
 namespace reckless {
 namespace detail {
     template <class Formatter, typename... Args>
-    std::size_t input_frame_dispatch(output_buffer* poutput, std::size_t* pframe_size, char* pinput);
+    std::size_t input_frame_dispatch(dispatch_operation operation, void* arg1, void* arg2);
 }
 
 using format_error_callback_t = std::function<void (output_buffer*, std::exception_ptr const&, std::type_info const&)>;
@@ -66,14 +66,14 @@ public:
         temporary_error_policy_.store(ep, std::memory_order_relaxed);
     }
     
-    error_policy fatal_error_policy(error_policy ep) const
+    error_policy permanent_error_policy() const
     {
-        fatal_error_policy_.load(std::memory_order_relaxed);
+        return permanent_error_policy_.load(std::memory_order_relaxed);
     }
     
-    void fatal_error_policy(error_policy ep)
+    void permanent_error_policy(error_policy ep)
     {
-        fatal_error_policy_.store(ep, std::memory_order_relaxed);
+        permanent_error_policy_.store(ep, std::memory_order_relaxed);
     }
     
     void panic_flush();
@@ -113,7 +113,7 @@ protected:
     }
 
 private:
-        
+    void output_worker_wrapper();
     void output_worker();
     bool flush_with_error_handling();
     void queue_log_entries(detail::commit_extent const& ce);
@@ -128,7 +128,7 @@ private:
         }
     }
     detail::thread_input_buffer* init_input_buffer();
-    void on_panic_flush_done() __attribute__(noreturn)
+    void on_panic_flush_done() __attribute__((noreturn));
     bool is_open()
     {
         return output_thread_.joinable();
@@ -150,18 +150,17 @@ private:
     format_error_callback_t format_error_callback_; // access synchronized by callback_mutex_
     std::thread output_thread_;
     spsc_event panic_flush_done_event_;
-    std::atomic_bool panic_flush_;
-    std::error_code fatal_error_code_
+    std::error_code fatal_error_code_;
     std::atomic_bool fatal_error_flag_;
 };
 
-class writer_error : std::system_error {
+class writer_error : public std::system_error {
 public:
     writer_error(std::error_code ec) :
         system_error(ec)
     {
     }
-    char const* what() const override;
+    char const* what() const noexcept override;
 };
 
 class format_error : public std::exception {
@@ -216,11 +215,11 @@ std::size_t input_frame_dispatch(dispatch_operation operation, void* arg1, void*
         auto poutput = static_cast<output_buffer*>(arg1);
         auto pinput = static_cast<char*>(arg2);
         struct args_owner {
-            args_holder(args_t& args) :
+            args_owner(args_t& args) :
                 args(args)
             {
             }
-            ~args_holder()
+            ~args_owner()
             {
                 // We need to do this from a destructor in case calling the
                 // formatter throws an exception. We can't just do it in a catch
@@ -235,9 +234,10 @@ std::size_t input_frame_dispatch(dispatch_operation operation, void* arg1, void*
         formatter_dispatch_helper<Formatter>(poutput, args.args, indexes);
         return frame_size;
     } else if(operation == get_typeid) {
-        *static_cast<std::typeinfo const**>(arg1) = &typeid(args_t);
+        *static_cast<std::type_info const**>(arg1) = &typeid(args_t);
         return frame_size;
     }
+    unreachable();
 }
 
 }   // namespace detail

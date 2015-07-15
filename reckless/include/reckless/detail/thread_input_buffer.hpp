@@ -11,7 +11,11 @@ class basic_log;
 
 namespace detail {
 
-typedef formatter_dispatch_function_t(output_buffer*, std::size_t*, char*);
+enum dispatch_operation {
+    invoke_formatter,
+    get_typeid
+};
+typedef std::size_t formatter_dispatch_function_t(dispatch_operation, void*, void*);
 // TODO these checks need to be done at runtime now
 //static_assert(alignof(dispatch_function_t*) <= RECKLESS_FRAME_ALIGNMENT,
 //        "RECKLESS_FRAME_ALIGNMENT must at least match that of a function pointer");

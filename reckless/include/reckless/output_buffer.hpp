@@ -135,7 +135,15 @@ protected:
         return pcommit_end_ == pbuffer_;
     }
 
+#ifdef __GNUC__
+public:
+#endif
+    // Need to make this public because of g++ bug 61148
+    // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61148
     void flush();
+#ifdef __GNUC__
+protected:
+#endif
     
     void flush_error_callback(flush_error_callback_t callback = flush_error_callback_t())
     {
@@ -145,8 +153,9 @@ protected:
     
     spsc_event shared_input_queue_full_event_; // FIXME rename to something that indicates this is used for all "notifications" to the worker thread
     
-    std::atomic<error_policy> temporary_error_policy_;
-    std::atomic<error_policy> permanent_error_policy_;
+    std::atomic<error_policy> temporary_error_policy_{error_policy::notify_on_recovery};
+    std::atomic<error_policy> permanent_error_policy_{error_policy::fail_immediately};
+    std::atomic_bool panic_flush_{false};
 
 private:
     output_buffer(output_buffer const&) = delete;
@@ -154,13 +163,13 @@ private:
 
     char* reserve_slow_path(std::size_t size);
 
-    writer* pwriter_;
-    char* pbuffer_;
-    char* pframe_end_;
-    char* pcommit_end_;
-    char* pbuffer_end_;
-    unsigned input_frames_in_buffer_;
-    unsigned lost_input_frames_;
+    writer* pwriter_ = nullptr;
+    char* pbuffer_ = nullptr;
+    char* pframe_end_ = nullptr;
+    char* pcommit_end_ = nullptr;
+    char* pbuffer_end_ = nullptr;
+    unsigned input_frames_in_buffer_ = 0;
+    unsigned lost_input_frames_ = 0;
     std::error_code initial_error_;         // Keeps track of the first error that caused lost_input_frames_ to become non-zero.
     std::mutex flush_error_callback_mutex_;
     flush_error_callback_t flush_error_callback_;

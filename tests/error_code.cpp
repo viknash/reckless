@@ -4,7 +4,8 @@
 int main()
 {
     reckless::file_writer writer("test.txt");
-    std::error_code code = writer.write("hello\n", 6);
+    std::error_code code;
+    writer.write("hello\n", 6, code);
     std::error_condition special_ec(EINTR, code.category());
     std::cout << code.category().name() << std::endl;
     bool eq = (code == reckless::writer::temporary_failure);

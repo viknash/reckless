@@ -93,7 +93,7 @@ template <class IndentPolicy, char Separator, class... Fields>
 class policy_formatter {
 public:
     template <typename... Args>
-    static void format(output_buffer* pbuffer, Fields&&... fields,
+    static void format(output_buffer* pbuffer, Fields&... fields,
         IndentPolicy indent, char const* pformat, Args&&... args)
     {
         format_fields(pbuffer, fields...);
@@ -106,7 +106,7 @@ public:
 
 private:
     template <class Field, class... Remaining>
-    static void format_fields(output_buffer* pbuffer, Field&& field, Remaining&&... remaining)
+    static void format_fields(output_buffer* pbuffer, Field& field, Remaining&&... remaining)
     {
         field.format(pbuffer);
         char* p = pbuffer->reserve(1);

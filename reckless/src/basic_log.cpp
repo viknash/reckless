@@ -8,6 +8,8 @@
 
 #include <unistd.h>     // sleep
 
+namespace reckless {
+
 namespace {
 
 void destroy_thread_input_buffer(void* p)
@@ -38,16 +40,13 @@ auto handle_flush_errors(F const& f) -> decltype(f())
 
 }   // anonymous namespace
 
-namespace reckless {
-
-char const* writer_error::what() const
+char const* writer_error::what() const noexcept
 {
     return "writer error";
 }
 
 basic_log::basic_log() :
-    thread_input_buffer_size_(0),
-    panic_flush_(false)
+    thread_input_buffer_size_(0)
 {
     if(0 != pthread_key_create(&thread_input_buffer_key_, &destroy_thread_input_buffer))
         throw std::bad_alloc();
@@ -57,8 +56,7 @@ basic_log::basic_log(writer* pwriter,
         std::size_t output_buffer_max_capacity,
         std::size_t shared_input_queue_size,
         std::size_t thread_input_buffer_size) :
-    thread_input_buffer_size_(0),
-    panic_flush_(false)
+    thread_input_buffer_size_(0)
 {
     if(0 != pthread_key_create(&thread_input_buffer_key_, &destroy_thread_input_buffer))
         throw std::bad_alloc();
@@ -112,7 +110,7 @@ void basic_log::close()
     assert(is_open());
     // FIXME always signal a buffer full event, so we don't have to wait 1
     // second before the thread exits.
-    queue_commit_extent({nullptr, nullptr});
+    queue_log_entries({nullptr, nullptr});
     output_thread_.join();
     assert(shared_input_queue_->empty());
     
@@ -192,7 +190,7 @@ void basic_log::output_worker()
             // A null input-buffer pointer is the termination signal. Finish up
             // and exit the worker thread.
             if(unlikely(panic_flush_))
-                output_buffer::panic_flush();  // never returns
+                on_panic_flush_done();  // never returns
             handle_flush_errors([this]() {
                     output_buffer::flush();
                 });
@@ -213,10 +211,10 @@ void basic_log::output_worker()
             std::size_t frame_size;
             try {
                 // Call formatter.
-                handle_flush_errors([this]() {
+                handle_flush_errors([&]() {
                         frame_size = (*pdispatch)(invoke_formatter, static_cast<output_buffer*>(this), pinput_start);
                     });
-            } catch(fatal_worker_thread_error const&) {
+            } catch(fatal_flush_error const&) {
                 throw;
             } catch(...) {
                 std::type_info const* pti;
@@ -317,3 +315,5 @@ void basic_log::on_panic_flush_done()
         sleep(3600);
     }
 }
+
+}   // namespace reckless

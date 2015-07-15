@@ -13,29 +13,31 @@ char const* excessive_output_by_frame::what() const noexcept
     return "excessive output by frame";
 }
     
+char const* flush_error::what() const noexcept
+{
+    return "flush error";
+}
+    
+char const* fatal_flush_error::what() const noexcept
+{
+    return "fatal flush error";
+}
+    
 using detail::likely;
 using detail::unlikely;
 
-output_buffer::output_buffer() :
-    temporary_error_policy_(error_policy:::notify_on_recovery),
-    permanent_error_policy_(error_policy::fail_immediately),
-    pwriter_(nullptr),
-    pbuffer_(nullptr),
-    pcommit_end_(nullptr),
-    pbuffer_end_(nullptr),
-    input_frames_in_buffer_(0),
-    lost_input_frames_(0)
+output_buffer::output_buffer()
 {
 }
 
-output_buffer::output_buffer(writer* pwriter, std::size_t max_capacity) :
-    output_buffer()
+output_buffer::output_buffer(writer* pwriter, std::size_t max_capacity)
 {
     reset(pwriter, max_capacity);
 }
 
 void output_buffer::reset()
 {
+    assert(!panic_flush_);
     std::free(pbuffer_);
     pwriter_ = nullptr;
     pbuffer_ = nullptr;
@@ -63,6 +65,8 @@ void output_buffer::reset(writer* pwriter, std::size_t max_capacity)
 
 output_buffer::~output_buffer()
 {
+    if(panic_flush_)
+        return;
     std::free(pbuffer_);
 }
 
@@ -209,7 +213,7 @@ void output_buffer::flush()
                 block_time_ms = std::min(block_time_ms, 1000u);
                 break;
             case error_policy::fail_immediately:
-                throw fatal_fluh_error(error);
+                throw fatal_flush_error(error);
             }
         }
     }
@@ -222,6 +226,7 @@ char* output_buffer::reserve_slow_path(std::size_t size)
     if(unlikely(frame_size > buffer_size))
         throw excessive_output_by_frame();
     flush();
+    return pcommit_end_;
 }
 
 }   // namespace reckless
