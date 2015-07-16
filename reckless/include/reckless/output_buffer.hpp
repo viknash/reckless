@@ -135,11 +135,11 @@ protected:
         return pcommit_end_ == pbuffer_;
     }
 
+    // Need to make flush() public because of g++ bug 61148.
+    // <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61148>
 #ifdef __GNUC__
 public:
 #endif
-    // Need to make this public because of g++ bug 61148
-    // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61148
     void flush();
 #ifdef __GNUC__
 protected:
