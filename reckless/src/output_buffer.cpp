@@ -57,6 +57,7 @@ void output_buffer::reset(writer* pwriter, std::size_t max_capacity)
     pbuffer_ = pbuffer;
 
     pwriter_ = pwriter;
+    pframe_end_ = pbuffer_;
     pcommit_end_ = pbuffer_;
     pbuffer_end_ = pbuffer_ + max_capacity;
     auto page = detail::get_page_size();

@@ -130,9 +130,9 @@ protected:
         pcommit_end_ = pframe_end_;
     }
     
-    bool empty() const
+    bool has_complete_frame() const
     {
-        return pcommit_end_ == pbuffer_;
+        return pframe_end_ != pbuffer_;
     }
 
     // Need to make flush() public because of g++ bug 61148.

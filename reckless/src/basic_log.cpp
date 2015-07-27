@@ -167,7 +167,7 @@ void basic_log::output_worker()
             for(thread_input_buffer* pbuffer : touched_input_buffers)
                 pbuffer->input_consumed_flag = false;
             touched_input_buffers.clear();
-            if(not output_buffer::empty()) {
+            if(output_buffer::has_complete_frame()) {
                 handle_flush_errors([this]() {
                     output_buffer::flush();
                 });
@@ -229,6 +229,7 @@ void basic_log::output_worker()
                 }
             }
 
+            output_buffer::frame_end();
             pinput_start = ce.pinput_buffer->discard_input_frame(frame_size);
             
             // Mark the originating thread's input buffer as having been

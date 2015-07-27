@@ -100,5 +100,4 @@ std::size_t reckless::file_writer::write(void const* pbuffer, std::size_t count,
         }
     }
     return p - static_cast<char const*>(pbuffer);
-
 }
