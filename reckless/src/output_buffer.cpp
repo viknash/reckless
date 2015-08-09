@@ -156,7 +156,6 @@ void output_buffer::flush()
 
         if(likely(!error)) {
             if(unlikely(lost_input_frames_)) {
-                // FIXME notify about lost frames
                 auto lif = lost_input_frames_;
                 lost_input_frames_ = 0;
                 flush_error_callback_t callback;
@@ -164,7 +163,8 @@ void output_buffer::flush()
                     std::lock_guard<std::mutex> lk(flush_error_callback_mutex_);
                     callback = flush_error_callback_;
                 }
-                callback(error, lif);
+                if(callback)
+                    callback(error, lif);
             }
             return;
         } else {
