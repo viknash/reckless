@@ -73,11 +73,63 @@ void flush_error_callback(std::error_code ec, std::size_t lost_frames)
 
 int main()
 {
+    g_log.open(&writer);
+    g_log.write("Successful write");
+    sleep(2);
+    writer.error_code.assign(static_cast<int>(std::errc::no_space_on_device),
+            get_error_category());
+    std::cout << "Disk full" << std::endl;
+    // These should come through once the simulated disk is no longer full
+    g_log.write("Temporary failed write #1");
+    sleep(2);
+    g_log.write("Temporary failed write #2");
+    sleep(1);
+    std::cout << "Disk no longer full" << std::endl;
+    writer.error_code.clear();
+    sleep(2);
+    g_log.close();
+    
+    std::cout << "------" << std::endl;
+    g_log.open(&writer);
+    g_log.write("Successful write");
+    sleep(2);
+    writer.error_code.assign(static_cast<int>(std::errc::no_space_on_device),
+            get_error_category());
+    g_log.flush_error_callback(&flush_error_callback);
+    std::cout << "Disk full" << std::endl;
+    // These should come through once the simulated disk is no longer full
+    // flush_error_callback should not be called.
+    g_log.write("Temporary failed write #1");
+    sleep(2);
+    g_log.write("Temporary failed write #2");
+    sleep(1);
+    std::cout << "Disk no longer full" << std::endl;
+    writer.error_code.clear();
+    sleep(2);
+    g_log.close();
+    
+//    std::cout << "------" << std::endl;
+//    g_log.open(&writer, 1024);
+//    g_log.write("Successful write");
+//    g_log.flush_error_callback(&flush_error_callback);
+//    sleep(2);
+//    writer.error_code.assign(static_cast<int>(std::errc::no_space_on_device),
+//            get_error_category());
+//    for(std::size_t count=0; count!=(1024+23)/26 + 1; ++count)
+//        g_log.write("Temporary failed write");
+//    sleep(2);
+//    writer.error_code.clear();
+//    sleep(2);
+//    g_log.close();
+//
+    // trigger immediately
 //    g_log.open(&writer);
+//    g_log.flush_error_callback();
+//    g_log.temporary_error_policy(reckless::error_policy::fail_immediately);
 //    g_log.write("Successful write");
 //    sleep(2);
 //    writer.error_code.assign(static_cast<int>(std::errc::no_space_on_device),
-//            error_category());
+//            get_error_category());
 //    g_log.write("Temporary failed write #1");
 //    sleep(2);
 //    g_log.write("Temporary failed write #2");
@@ -85,19 +137,5 @@ int main()
 //    writer.error_code.clear();
 //    sleep(2);
 //    g_log.close();
-    
-    g_log.open(&writer);
-    g_log.flush_error_callback(&flush_error_callback);
-    g_log.write("Successful write");
-    sleep(2);
-    writer.error_code.assign(static_cast<int>(std::errc::no_space_on_device),
-            error_category());
-    g_log.write("Temporary failed write #1");
-    sleep(2);
-    g_log.write("Temporary failed write #2");
-    sleep(1);
-    writer.error_code.clear();
-    sleep(2);
-    g_log.close();
-    return 0;
+//    return 0;
 }

@@ -150,6 +150,25 @@ protected:
         std::lock_guard<std::mutex> lk(flush_error_callback_mutex_);
         flush_error_callback_ = move(callback);
     }
+    error_policy temporary_error_policy() const
+    {
+        return temporary_error_policy_.load(std::memory_order_relaxed);
+    }
+    
+    void temporary_error_policy(error_policy ep)
+    {
+        temporary_error_policy_.store(ep, std::memory_order_relaxed);
+    }
+    
+    error_policy permanent_error_policy() const
+    {
+        return permanent_error_policy_.load(std::memory_order_relaxed);
+    }
+    
+    void permanent_error_policy(error_policy ep)
+    {
+        permanent_error_policy_.store(ep, std::memory_order_relaxed);
+    }
     
     spsc_event shared_input_queue_full_event_; // FIXME rename to something that indicates this is used for all "notifications" to the worker thread
     
