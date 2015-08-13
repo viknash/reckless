@@ -70,6 +70,13 @@ protected:
         std::size_t const args_offset = (sizeof(formatter_dispatch_function_t*) + args_align-1)/args_align*args_align;
         std::size_t const frame_size = args_offset + sizeof(args_t);
 
+#ifdef RECKLESS_DEBUG
+        // If this assert triggers then you have tried to write to the log from
+        // within the worker thread (from flush_error_callback?). That's bad
+        // because it can lead to a deadlock.
+        assert(pthread_self() != output_worker_native_handle_);
+#endif
+                    
         auto pbuffer = get_input_buffer();
         auto marker = pbuffer->allocation_marker();
         char* pframe = pbuffer->allocate_input_frame(frame_size);
@@ -134,6 +141,10 @@ private:
     spsc_event panic_flush_done_event_;
     std::error_code fatal_error_code_;
     std::atomic_bool fatal_error_flag_;
+    
+#ifdef RECKLESS_DEBUG
+    pthread_t output_worker_native_handle_;
+#endif
 };
 
 class writer_error : public std::system_error {

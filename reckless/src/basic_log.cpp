@@ -131,6 +131,7 @@ void basic_log::panic_flush()
 void basic_log::output_worker_wrapper()
 {
     try {
+        pthread_setname_np(pthread_self(), "reckless worker");
         output_worker();
     } catch(fatal_flush_error const& e) {
         fatal_error_code_ = e.code();

@@ -145,6 +145,7 @@ public:
 protected:
 #endif
     
+    // must not write to the log since it may cause a deadlock
     void flush_error_callback(flush_error_callback_t callback = flush_error_callback_t())
     {
         std::lock_guard<std::mutex> lk(flush_error_callback_mutex_);

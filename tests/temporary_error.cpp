@@ -73,21 +73,21 @@ void flush_error_callback(std::error_code ec, std::size_t lost_frames)
 
 int main()
 {
-    g_log.open(&writer);
-    g_log.write("Successful write");
-    sleep(2);
-    writer.error_code.assign(static_cast<int>(std::errc::no_space_on_device),
-            get_error_category());
-    std::cout << "Disk full" << std::endl;
-    // These should come through once the simulated disk is no longer full
-    g_log.write("Temporary failed write #1");
-    sleep(2);
-    g_log.write("Temporary failed write #2");
-    sleep(1);
-    std::cout << "Disk no longer full" << std::endl;
-    writer.error_code.clear();
-    sleep(2);
-    g_log.close();
+    //g_log.open(&writer);
+    //g_log.write("Successful write");
+    //sleep(2);
+    //writer.error_code.assign(static_cast<int>(std::errc::no_space_on_device),
+    //        get_error_category());
+    //std::cout << "Disk full" << std::endl;
+    //// These should come through once the simulated disk is no longer full
+    //g_log.write("Temporary failed write #1");
+    //sleep(2);
+    //g_log.write("Temporary failed write #2");
+    //sleep(1);
+    //std::cout << "Disk no longer full" << std::endl;
+    //writer.error_code.clear();
+    //sleep(2);
+    //g_log.close();
     
     std::cout << "------" << std::endl;
     g_log.open(&writer);
