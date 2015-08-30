@@ -13,6 +13,7 @@
 
 namespace reckless {
 class writer;
+class output_buffer;
     
 enum class error_policy {
     ignore,
@@ -75,7 +76,7 @@ private:
     std::error_code error_code_;
 };
 
-using flush_error_callback_t = std::function<void (std::error_code ec, unsigned lost_record_count)>;
+using flush_error_callback_t = std::function<void (output_buffer* pbuffer, std::error_code ec, unsigned lost_record_count)>;
 
 class output_buffer {
 public:

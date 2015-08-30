@@ -65,10 +65,14 @@ public:
 reckless::policy_log<> g_log;
 unreliable_writer writer;
 
-void flush_error_callback(std::error_code ec, std::size_t lost_frames)
+void flush_error_callback(reckless::output_buffer* pbuffer, std::error_code ec,
+        std::size_t lost_frames)
 {
-    g_log.write("Failure %x while writing to log; lost %d log records",
-            ec.value(), lost_frames);
+    char* p = pbuffer->reserve(128);
+    int len = std::sprintf(p,
+        "Failure %x while writing to log; lost %d log records\n",
+        ec.value(), static_cast<unsigned>(lost_frames));
+    pbuffer->commit(len);
 }
 
 int main()
@@ -96,14 +100,14 @@ int main()
     writer.error_code.assign(static_cast<int>(std::errc::no_space_on_device),
             get_error_category());
     g_log.flush_error_callback(&flush_error_callback);
-    std::cout << "Disk full" << std::endl;
+    std::cout << "Simulating disk full" << std::endl;
     // These should come through once the simulated disk is no longer full
     // flush_error_callback should not be called.
     g_log.write("Temporary failed write #1");
     sleep(2);
     g_log.write("Temporary failed write #2");
     sleep(1);
-    std::cout << "Disk no longer full" << std::endl;
+    std::cout << "Simulating disk no longer full" << std::endl;
     writer.error_code.clear();
     sleep(2);
     g_log.close();

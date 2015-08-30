@@ -164,7 +164,7 @@ void output_buffer::flush()
                     callback = flush_error_callback_;
                 }
                 if(callback)
-                    callback(error, lif);
+                    callback(this, error, lif);
             }
             return;
         } else {
