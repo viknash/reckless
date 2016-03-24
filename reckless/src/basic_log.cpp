@@ -213,7 +213,7 @@ void basic_log::output_worker()
                 pdispatch = *reinterpret_cast<formatter_dispatch_function_t**>(pinput_start);
             }
 
-            std::size_t frame_size;
+            std::size_t frame_size = 0; // Initialization only to avoid warning
             try {
                 // Call formatter.
                 handle_flush_errors([&]() {
