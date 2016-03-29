@@ -33,6 +33,7 @@ auto handle_flush_errors(F const& f) -> decltype(f())
         // formatting operation can be aborted. No need to do
         // anything at this point as it has already been taken care
         // of in output_buffer::flush().
+        std::printf("Caught flush_error and ignoring it\n");
     }
     // fatal_flush_error is just allowed to propagate up to
     // output_worker_wrapper.
@@ -202,6 +203,7 @@ void basic_log::output_worker()
             return;
         }
 
+        std::printf("Popped input frame\n");
         // For this thread-local input buffer, run through all available log
         // entries and invoke their formatter to generate data for the output
         // buffer.
@@ -214,11 +216,16 @@ void basic_log::output_worker()
             }
 
             std::size_t frame_size = 0; // Initialization only to avoid warning
+            
+            std::printf("Invoking formatter\n");
             try {
                 // Call formatter.
-                handle_flush_errors([&]() {
-                        frame_size = (*pdispatch)(invoke_formatter, static_cast<output_buffer*>(this), pinput_start);
-                    });
+                frame_size = (*pdispatch)(invoke_formatter, static_cast<output_buffer*>(this), pinput_start);
+            } catch(flush_error const&) {
+                std::type_info const* pti;
+                frame_size = (*pdispatch)(get_typeid, &pti, nullptr);
+                std::printf("output_worker caught flush_error, skipping frame_size=%u\n", (unsigned)frame_size);
+                output_buffer::lost_frame();
             } catch(fatal_flush_error const&) {
                 throw;
             } catch(...) {

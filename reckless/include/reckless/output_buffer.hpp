@@ -119,10 +119,15 @@ protected:
     // throw bad_alloc if unable to malloc() the buffer.
     void reset(writer* pwriter, std::size_t max_capacity);
 
+    // Put a watermark indicating where the last complete output frame ends.
     void frame_end()
     {
         pframe_end_ = pcommit_end_;
-        ++input_frames_in_buffer_;
+    }
+    // Notify that an input frame was lost because of a flush error.
+    void lost_frame()
+    {
+        ++lost_input_frames_;
     }
 
     // Undo everything that has been written during the current input frame.
@@ -189,7 +194,6 @@ private:
     char* pframe_end_ = nullptr;
     char* pcommit_end_ = nullptr;
     char* pbuffer_end_ = nullptr;
-    unsigned input_frames_in_buffer_ = 0;
     unsigned lost_input_frames_ = 0;
     std::error_code initial_error_;         // Keeps track of the first error that caused lost_input_frames_ to become non-zero.
     std::mutex flush_error_callback_mutex_;

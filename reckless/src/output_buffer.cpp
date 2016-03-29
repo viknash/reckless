@@ -43,7 +43,6 @@ void output_buffer::reset()
     pbuffer_ = nullptr;
     pcommit_end_ = nullptr;
     pbuffer_end_ = nullptr;
-    input_frames_in_buffer_ = 0;
     lost_input_frames_ = 0;
 }
 
@@ -97,6 +96,7 @@ void output_buffer::write(void const* buf, std::size_t count)
 
 void output_buffer::flush()
 {
+    std::printf("output_buffer::flush()\n");
     // TODO keep track of a high watermark, i.e. max value of pcommit_end_.
     // Clear every second or some such. Use madvise to release unused memory.
     
@@ -114,6 +114,8 @@ void output_buffer::flush()
     while(true) {
         std::error_code error;
         std::size_t written;
+        if(remaining == 0)
+            return;
         try {
             // FIXME the crash mentioned below happens if you have g_log as a
             // global object and have a writer with local scope (e.g. in
@@ -151,11 +153,26 @@ void output_buffer::flush()
         std::memmove(pbuffer_, pbuffer_+written, remaining_data);
         pframe_end_ -= written;
         pcommit_end_ -= written;
-        auto input_frames_in_buffer = input_frames_in_buffer_;
-        input_frames_in_buffer_ = 0;
 
         if(likely(!error)) {
-            if(unlikely(lost_input_frames_)) {
+            if(likely(!lost_input_frames_)) {
+                return;
+            } else {
+                // Frames were discarded because of earlier errors in
+                // notify_on_recovery mode. Now that the writer is working and
+                // there is space in the buffer, we can notify the callback
+                // function about lost frames.
+                //
+                // The callback may put additional data in the output buffer. To
+                // ensure that we do not leave data hanging around indefinitely,
+                // we need to make sure that the extra data is also written.
+                // This is particularly important when we're flushing as part of
+                // shutting down the logger, as we could lose output if we don't
+                // flush all of it.
+                //
+                // To accomplish the additional writes we fall through after
+                // invoking the callback, and allow control to flow to the top
+                // of the while loop and issue another write.
                 auto lif = lost_input_frames_;
                 lost_input_frames_ = 0;
                 flush_error_callback_t callback;
@@ -163,10 +180,12 @@ void output_buffer::flush()
                     std::lock_guard<std::mutex> lk(flush_error_callback_mutex_);
                     callback = flush_error_callback_;
                 }
-                if(callback)
+                if(callback) {
                     callback(this, error, lif);
+                    frame_end();
+                }
+                remaining = pframe_end_ - pbuffer_; // Update byte-remaining count.
             }
-            return;
         } else {
             error_policy ep;
             if(error == writer::temporary_failure)
@@ -182,7 +201,8 @@ void output_buffer::flush()
                 // starts working again.
                 if(!lost_input_frames_)
                     initial_error_ = error;
-                lost_input_frames_ += input_frames_in_buffer;
+                std::printf("  error with notify_on_recovery: lost_input_frames_ = %d\n",
+                    lost_input_frames_);
                 throw flush_error(error);
             case error_policy::block:
                 // To give the client the appearance of blocking, we need to
