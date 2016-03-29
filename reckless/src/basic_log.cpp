@@ -134,7 +134,7 @@ void basic_log::output_worker_wrapper()
 #ifdef RECKLESS_DEBUG
     output_worker_native_handle_ = pthread_self();
 #endif
-    pthread_setname_np(pthread_self(), "reckless worker");
+    pthread_setname_np(pthread_self(), "reckless output worker");
     
     try {
         output_worker();
