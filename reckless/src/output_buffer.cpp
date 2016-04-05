@@ -35,7 +35,7 @@ output_buffer::output_buffer(writer* pwriter, std::size_t max_capacity)
     reset(pwriter, max_capacity);
 }
 
-void output_buffer::reset()
+void output_buffer::reset() noexcept
 {
     assert(!panic_flush_);
     std::free(pbuffer_);

@@ -105,13 +105,17 @@ void basic_log::open(writer* pwriter,
     output_thread_ = std::thread(std::mem_fn(&basic_log::output_worker_wrapper), this);
 }
 
-void basic_log::close()
+void basic_log::close(std::error_code& ec)
 {
     using namespace detail;
     assert(is_open());
     // FIXME always signal a buffer full event, so we don't have to wait 1
     // second before the thread exits.
-    queue_log_entries({nullptr, nullptr});
+    
+    send_log_entries({nullptr, nullptr}, ec);
+    
+    // We're going to assume that join() will not throw here, since all the
+    // documented error conditions would be the result of a bug.
     output_thread_.join();
     assert(shared_input_queue_->empty());
     
@@ -119,7 +123,14 @@ void basic_log::close()
     thread_input_buffer_size_ = 0;
     shared_input_queue_ = std::experimental::nullopt;
     assert(!is_open());
+}
 
+void basic_log::close()
+{
+    std::error_code error;
+    close(error);
+    if(error)
+        throw writer_error(error);
 }
 
 void basic_log::panic_flush()
@@ -197,9 +208,12 @@ void basic_log::output_worker()
             // and exit the worker thread.
             if(unlikely(panic_flush_))
                 on_panic_flush_done();  // never returns
-            handle_flush_errors([this]() {
-                    output_buffer::flush();
-                });
+            try {
+                output_buffer::flush();
+            } catch(flush_error const& e) {
+                // Pretend this is a fatal error (in a sense it is, since 
+                throw fatal_flush_error(e.code());
+            }
             return;
         }
 
@@ -258,7 +272,9 @@ void basic_log::output_worker()
         }
     }
 }
-void basic_log::queue_log_entries(detail::commit_extent const& ce)
+
+void basic_log::send_log_entries(detail::commit_extent const& ce,
+        std::error_code& ec)
 {
     using namespace detail;
     if(unlikely(panic_flush_))
@@ -274,14 +290,25 @@ void basic_log::queue_log_entries(detail::commit_extent const& ce)
         while(true)
             sleep(3600);
     }
-    if(unlikely(fatal_error_flag_.load(std::memory_order_acquire)))
-        throw writer_error(fatal_error_code_);
-    if(unlikely(not shared_input_queue_->push(ce))) {
-        do {
-            shared_input_queue_full_event_.signal();
-            shared_input_consumed_event_.wait();
-        } while(not shared_input_queue_->push(ce));
+    if(likely(!fatal_error_flag_.load(std::memory_order_acquire))) {
+        if(unlikely(not shared_input_queue_->push(ce))) {
+            do {
+                shared_input_queue_full_event_.signal();
+                shared_input_consumed_event_.wait();
+            } while(not shared_input_queue_->push(ce));
+        }
+        ec.clear();
+    } else {
+        ec = fatal_error_code_;
     }
+}
+
+void basic_log::send_log_entries(detail::commit_extent const& ce)
+{
+    std::error_code error;
+    send_log_entries(ce, error);
+    if(error)
+        throw writer_error(error);
 }
 
 void basic_log::reset_shared_input_queue(std::size_t node_count)

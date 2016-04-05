@@ -115,7 +115,7 @@ public:
     }
     
 protected:
-    void reset();
+    void reset() noexcept;
     // throw bad_alloc if unable to malloc() the buffer.
     void reset(writer* pwriter, std::size_t max_capacity);
 
