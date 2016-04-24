@@ -3,7 +3,7 @@
 #include <reckless/detail/utility.hpp>
 
 #include <cstdlib>      // malloc, free
-#include <sys/mman.h>   // madvise()
+//#include <sys/mman.h>   // madvise()
 
 reckless::output_buffer::output_buffer() :
     pwriter_(nullptr),
@@ -62,8 +62,8 @@ void reckless::output_buffer::reset(writer* pwriter, std::size_t max_capacity)
     // FIXME check return value of malloc here 
     pcommit_end_ = pbuffer_;
     pbuffer_end_ = pbuffer_ + max_capacity;
-    auto page = detail::get_page_size();
-    madvise(pbuffer_ + page, max_capacity - page, MADV_DONTNEED);
+   // auto page = detail::get_page_size();
+   // madvise(pbuffer_ + page, max_capacity - page, MADV_DONTNEED);
 }
 
 reckless::output_buffer::~output_buffer()

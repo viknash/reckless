@@ -24,7 +24,7 @@ public:
         // Need 25 chars since sprintf wants to add a NUL char.
         char* p = pbuffer->reserve(25);
         struct tm tm;
-        localtime_r(&tv_.tv_sec, &tm);
+        localtime_r((time_t*)&(tv_.tv_sec), &tm);
         strftime(p, 25, "%Y-%m-%d %H:%M:%S.", &tm);
         sprintf(p+20, "%03u ", static_cast<unsigned>(tv_.tv_usec)/1000u);
         pbuffer->commit(24);

@@ -3,9 +3,11 @@
 #include <atomic>
 #include <system_error>
 
-#include <linux/futex.h>
+#include <mutex>
+#include <condition_variable>
+//#include <linux/futex.h>
 #include <unistd.h>
-#include <sys/syscall.h>
+//#include <sys/syscall.h>
 #include <time.h>
 #include <sys/time.h>
 
@@ -20,14 +22,17 @@ public:
         // TODO possible performance improvement: If we know nobody is waiting,
         // then we don't need to signal the futex.
         atomic_exchange_explicit(&signal_, 1, std::memory_order_release);
-        sys_futex(&signal_, FUTEX_WAKE, 1, nullptr, nullptr, 0);
+        //sys_futex(&signal_, FUTEX_WAKE, 1, nullptr, nullptr, 0);
+		cv.notify_one();
     }
 
     void wait()
     {
         int signal = atomic_exchange_explicit(&signal_, 0, std::memory_order_acquire);
         while(not signal) {
-            sys_futex(&signal_, FUTEX_WAIT, 0, nullptr, nullptr, 0);
+            //sys_futex(&signal_, FUTEX_WAIT, 0, nullptr, nullptr, 0);
+			std::unique_lock<std::mutex> lk(m);
+			cv.wait(lk);
             signal = atomic_exchange_explicit(&signal_, 0, std::memory_order_acquire);
         }
     }
@@ -48,7 +53,9 @@ public:
             unsigned remaining_ms = milliseconds - elapsed_ms;
             timeout.tv_sec = remaining_ms/1000;
             timeout.tv_nsec = static_cast<long>(remaining_ms%1000)*1000000;
-            sys_futex(&signal_, FUTEX_WAIT, 0, &timeout, nullptr, 0);
+            //sys_futex(&signal_, FUTEX_WAIT, 0, &timeout, nullptr, 0);
+			std::unique_lock<std::mutex> lk(m);
+			cv.wait(lk);
             signal = atomic_exchange_explicit(&signal_, 0, std::memory_order_acquire);
             if(signal)
                 return true;
@@ -64,11 +71,11 @@ public:
     }
 
 private:
-    int sys_futex(void *addr1, int op, int val1, struct timespec const *timeout,
+   /* int sys_futex(void *addr1, int op, int val1, struct timespec const *timeout,
             void *addr2, int val3)
     {
         return syscall(SYS_futex, addr1, op, val1, timeout, addr2, val3);
-    }
+    }*/
 
     int atomic_exchange_explicit(int* pvalue, int new_value, std::memory_order)
     {
@@ -81,6 +88,8 @@ private:
     }
 
     int signal_;
+	std::mutex m;
+	std::condition_variable cv;	
 };
 
 #endif // RECKLESS_DETAIL_SPSC_EVENT_HPP
