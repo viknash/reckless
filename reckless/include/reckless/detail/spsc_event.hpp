@@ -47,12 +47,12 @@ public:
             throw std::system_error(errno, std::system_category());
 
         unsigned elapsed_ms = 0;
-        struct timespec timeout = {0, 0};
+        //struct timespec timeout = {0, 0};
 
         do {
-            unsigned remaining_ms = milliseconds - elapsed_ms;
-            timeout.tv_sec = remaining_ms/1000;
-            timeout.tv_nsec = static_cast<long>(remaining_ms%1000)*1000000;
+            //unsigned remaining_ms = milliseconds - elapsed_ms;
+            //timeout.tv_sec = remaining_ms/1000;
+            //timeout.tv_nsec = static_cast<long>(remaining_ms%1000)*1000000;
             //sys_futex(&signal_, FUTEX_WAIT, 0, &timeout, nullptr, 0);
 			std::unique_lock<std::mutex> lk(m);
 			cv.wait(lk);

@@ -6,6 +6,7 @@
 #include <utility>  // forward
 #include <cstring>  // memset
 #include <cstdlib>  // size_t
+#include <time.h>
 
 namespace reckless {
 // TODO some way of allocating a specific input buffer size for a thread that
@@ -24,7 +25,8 @@ public:
         // Need 25 chars since sprintf wants to add a NUL char.
         char* p = pbuffer->reserve(25);
         struct tm tm;
-        localtime_r((time_t*)&(tv_.tv_sec), &tm);
+        time_t time = tv_.tv_sec;
+        localtime_r(&time, &tm);
         strftime(p, 25, "%Y-%m-%d %H:%M:%S.", &tm);
         sprintf(p+20, "%03u ", static_cast<unsigned>(tv_.tv_usec)/1000u);
         pbuffer->commit(24);

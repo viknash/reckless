@@ -583,9 +583,9 @@ decimal18 binary64_to_decimal18(double v)
     // exponent then we get the same situation as above, i.e.
     //   1 <= 10 * m2 * 10^e2f < 20.
 
-    long double d = e2;
+    double d = e2;
     d *=  0.30102999566398119521L;
-    long double e10i;
+    double e10i;
     long double e10f = std::modf(d, &e10i);
     long double m10;
     if(e2 < 0) {
