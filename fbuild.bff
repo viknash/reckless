@@ -7,13 +7,17 @@
 	.OutputBase 		= '$BasePath$/tmp' 
 	.OutputBinBase 		= '$BasePath$/bin'
 	.OutputLibBase 		= '$BasePath$/lib'
-	.OutputIncBase 		= '$BasePath$/include'
+	.OutputIncBase 		= '$BasePath$/reckless/include'
 	// Visual Studio Project Generation
 	//--------------------------------------------------------------------------
 	VCXProject( '$ProjectName$-proj' )
 	{
 		.ProjectOutput				= '$OutputBase$/VisualStudio/Projects/$ProjectName$.vcxproj'
-		.ProjectInputPaths			= '$BasePath$\$ProjectPath$\'
+		.ProjectInputPaths			= {
+										'$BasePath$\$ProjectPath$\',
+										'$OutputIncBase$\'
+										}
+		.ProjectFiles 				= '$BasePath$/fbuild.bff'
 		.ProjectBasePath			= '$BasePath$\$ProjectPath$\'
 
 	}
